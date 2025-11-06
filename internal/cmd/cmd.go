@@ -1,0 +1,185 @@
+package cmd
+
+import (
+	"fmt"
+	"os"
+
+	"path/filepath"
+	"strings"
+
+	"github.com/alecthomas/kong"
+	"github.com/user/go3mf/internal/models"
+	"github.com/user/go3mf/internal/preconditions"
+	"github.com/user/go3mf/internal/renderer"
+	"github.com/user/go3mf/internal/stl"
+	"github.com/user/go3mf/internal/threemf"
+	"github.com/user/go3mf/internal/threemf/combine"
+	"github.com/user/go3mf/internal/ui"
+	"github.com/user/go3mf/version"
+)
+
+type CLI struct {
+	CombineScad *CombineScadCmd `cmd:"" help:"Render SCAD files and combine into single 3MF"`
+	Combine3MF  *Combine3MFCmd  `cmd:"" help:"Combine multiple 3MF files into single model"`
+	CombineSTL  *CombineSTLCmd  `cmd:"" help:"Combine multiple STL files into single model"`
+	Version     *VersionCmd     `cmd:"" help:"Show version information"`
+}
+
+type CombineScadCmd struct {
+	Output string   `help:"Output 3MF file path" default:"combined.3mf" short:"o"`
+	Files  []string `arg:"" help:"SCAD files to combine. Format: path or path:name" required:""`
+}
+
+func (c *CombineScadCmd) Run() error {
+	// Check preconditions
+	ui.PrintHeader("Checking preconditions...")
+	if err := preconditions.Check(); err != nil {
+		ui.PrintError("OpenSCAD not found: " + err.Error())
+		os.Exit(1)
+	}
+	ui.PrintSuccess("OpenSCAD is installed")
+
+	// Validate files
+	ui.PrintStep("Validating SCAD files...")
+	if err := preconditions.ValidateFiles(c.Files); err != nil {
+		ui.PrintError(err.Error())
+		os.Exit(1)
+	}
+
+	// Parse input files
+	var scadFiles []models.ScadFile
+	for i, arg := range c.Files {
+		parts := strings.Split(arg, ":")
+		path := parts[0]
+
+		// Use custom name if provided
+		name := ""
+		if len(parts) > 1 {
+			name = parts[1]
+		} else {
+			// Use filename without extension
+			name = filepath.Base(path[:len(path)-len(filepath.Ext(path))])
+			// For the first file, default to "button" if no custom name given
+			if i == 0 {
+				name = "button"
+			}
+		}
+
+		scadFiles = append(scadFiles, models.ScadFile{Path: path, Name: name})
+	}
+
+	// Render SCAD files
+	ui.PrintHeader("Rendering SCAD files...")
+	baseDir := filepath.Dir(scadFiles[0].Path)
+	var scadPaths []string
+	for _, scad := range scadFiles {
+		scadPaths = append(scadPaths, scad.Path)
+	}
+
+	tempFiles, err := renderer.RenderMultipleSCAD(baseDir, scadPaths)
+	if err != nil {
+		ui.PrintError(err.Error())
+		os.Exit(1)
+	}
+	defer renderer.CleanupTempFiles(tempFiles)
+
+	for _, scad := range scadFiles {
+		ui.PrintStep("Rendered " + scad.Path + " → " + scad.Name)
+	}
+
+	// Combine 3MF files
+	ui.PrintHeader("Combining 3MF files...")
+	combiner := threemf.NewCombiner()
+	if err := combiner.Combine(tempFiles, scadFiles, c.Output); err != nil {
+		ui.PrintError(err.Error())
+		os.Exit(1)
+	}
+
+	// Print success
+	ui.PrintSuccess("Combined 3MF file created: " + c.Output)
+	var names []string
+	for _, scad := range scadFiles {
+		names = append(names, scad.Name)
+	}
+	ui.PrintObjectList(names)
+	return nil
+}
+
+type Combine3MFCmd struct {
+	Output string   `help:"Output 3MF file path" default:"combined.3mf" short:"o"`
+	Files  []string `arg:"" help:"3MF files to combine" required:""`
+}
+
+func (c *Combine3MFCmd) Run() error {
+	// Validate files exist
+	ui.PrintHeader("Validating 3MF files...")
+	for _, file := range c.Files {
+		if _, err := os.Stat(file); err != nil {
+			ui.PrintError("File not found: " + file)
+			os.Exit(1)
+		}
+		ui.PrintStep("Found " + file)
+	}
+
+	// Combine 3MF files
+	ui.PrintHeader("Combining 3MF files...")
+	combiner := combine.NewCombiner()
+	if err := combiner.Combine(c.Files, c.Output); err != nil {
+		ui.PrintError(err.Error())
+		os.Exit(1)
+	}
+
+	ui.PrintSuccess("Combined 3MF file created: " + c.Output)
+	return nil
+}
+
+type CombineSTLCmd struct {
+	Output string   `help:"Output STL file path" default:"combined.stl" short:"o"`
+	Files  []string `arg:"" help:"STL files to combine" required:""`
+}
+
+func (c *CombineSTLCmd) Run() error {
+	// Validate files exist
+	ui.PrintHeader("Validating STL files...")
+	for _, file := range c.Files {
+		if _, err := os.Stat(file); err != nil {
+			ui.PrintError("File not found: " + file)
+			os.Exit(1)
+		}
+		ui.PrintStep("Found " + file)
+	}
+
+	// Combine STL files
+	ui.PrintHeader("Combining STL files...")
+	combiner := stl.NewCombiner()
+	if err := combiner.Combine(c.Files, c.Output); err != nil {
+		ui.PrintError(err.Error())
+		os.Exit(1)
+	}
+
+	ui.PrintSuccess("Combined STL file created: " + c.Output)
+	return nil
+}
+
+type VersionCmd struct{}
+
+func (c *VersionCmd) Run() error {
+	info := version.Get()
+	fmt.Println(info.String())
+	return nil
+}
+
+// Parse parses command line arguments and executes the appropriate command
+func Parse() {
+	cli := &CLI{}
+	ctx := kong.Parse(cli,
+		kong.Name("go3mf"),
+		kong.Description("3D model file combiner and SCAD renderer"),
+		kong.UsageOnError(),
+	)
+	err := ctx.Run()
+	if err != nil {
+		ui.PrintError(err.Error())
+		os.Exit(1)
+	}
+}

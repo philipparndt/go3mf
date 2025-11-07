@@ -2,9 +2,12 @@ package renderer
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"github.com/user/go3mf/internal/ui"
 )
 
 // RenderSCAD renders a SCAD file to 3MF format
@@ -17,8 +20,15 @@ func RenderSCAD(workDir, scadFile, outputFile string) error {
 
 	cmd := exec.Command("openscad", "-o", outputFile, absScadFile)
 	cmd.Dir = workDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	
+	// Only show output in verbose mode, otherwise suppress it
+	if ui.IsVerbose() {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	} else {
+		cmd.Stdout = io.Discard
+		cmd.Stderr = io.Discard
+	}
 
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to render %s: %w", scadFile, err)

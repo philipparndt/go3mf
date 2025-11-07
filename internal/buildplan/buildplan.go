@@ -225,11 +225,35 @@ func (p *Planner) createSTLPlan(files []string, outputFile string) (*BuildPlan, 
 
 // Execute runs all steps in the plan
 func (p *BuildPlan) Execute() error {
-	for _, step := range p.Steps {
-		ui.PrintStep("Executing: " + step.Name())
+	if ui.IsVerbose() {
+		ui.PrintTitle("Build Plan Execution")
+		ui.PrintInfo(fmt.Sprintf("Total steps: %d", len(p.Steps)))
+		ui.PrintSeparator()
+	}
+	
+	for i, step := range p.Steps {
+		if ui.IsVerbose() {
+			ui.PrintHeader(fmt.Sprintf("Step %d/%d: %s", i+1, len(p.Steps), step.Name()))
+		}
 		if err := step.Execute(); err != nil {
 			return err
 		}
+	}
+	
+	// Update OutputFile from buildContext if not already set
+	if p.OutputFile == "" && buildContext.OutputFile != "" {
+		p.OutputFile = buildContext.OutputFile
+	}
+	
+	ui.PrintSeparator()
+	ui.PrintSuccess("Build completed successfully!")
+	if p.OutputFile != "" {
+		// Convert to relative path if possible
+		relPath, err := filepath.Rel(".", p.OutputFile)
+		if err != nil {
+			relPath = p.OutputFile
+		}
+		ui.PrintKeyValue("Output file", relPath)
 	}
 	return nil
 }
@@ -302,8 +326,6 @@ func (s *ParseObjectGroupsStep) Name() string {
 }
 
 func (s *ParseObjectGroupsStep) Execute() error {
-	ui.PrintHeader("Parsing object groups...")
-
 	// Create YamlConfig from object groups
 	yamlConfig := &models.YamlConfig{
 		Output:  s.OutputFile,
@@ -363,23 +385,34 @@ func (s *ParseObjectGroupsStep) Execute() error {
 
 	// Display configuration summary
 	ui.PrintSuccess(fmt.Sprintf("Parsed %d object(s)", len(yamlConfig.Objects)))
-	for _, obj := range yamlConfig.Objects {
-		ui.PrintStep(fmt.Sprintf("Object '%s' with %d part(s)", obj.Name, len(obj.Parts)))
-		for _, part := range obj.Parts {
-			filamentInfo := ""
-			if part.Filament > 0 {
-				filamentInfo = fmt.Sprintf(" [filament %d]", part.Filament)
+	if ui.IsVerbose() {
+		for _, obj := range yamlConfig.Objects {
+			ui.PrintItem(fmt.Sprintf("Object: %s (%d part%s)", obj.Name, len(obj.Parts), pluralize(len(obj.Parts))))
+			for _, part := range obj.Parts {
+				filamentInfo := ""
+				if part.Filament > 0 {
+					filamentInfo = fmt.Sprintf(" [filament %d]", part.Filament)
+				}
+				ui.PrintItem(fmt.Sprintf("  └─ %s: %s%s", part.Name, filepath.Base(part.File), filamentInfo))
 			}
-			ui.PrintStep(fmt.Sprintf("  - %s: %s%s", part.Name, filepath.Base(part.File), filamentInfo))
 		}
 	}
 
 	return nil
 }
 
+// pluralize returns "s" if count != 1, empty string otherwise
+func pluralize(count int) string {
+	if count == 1 {
+		return ""
+	}
+	return "s"
+}
+
 // LoadYAMLStep loads and validates YAML configuration
 type LoadYAMLStep struct {
 	ConfigPath string
+	Plan       *BuildPlan
 }
 
 func (s *LoadYAMLStep) Name() string {
@@ -387,7 +420,6 @@ func (s *LoadYAMLStep) Name() string {
 }
 
 func (s *LoadYAMLStep) Execute() error {
-	ui.PrintHeader("Loading configuration...")
 	loader := config.NewLoader()
 	cfg, err := loader.Load(s.ConfigPath)
 	if err != nil {
@@ -397,15 +429,17 @@ func (s *LoadYAMLStep) Execute() error {
 	buildContext.OutputFile = cfg.Output
 	ui.PrintSuccess(fmt.Sprintf("Loaded configuration with %d object(s)", len(cfg.Objects)))
 
-	// Display configuration summary
-	for _, obj := range cfg.Objects {
-		ui.PrintStep(fmt.Sprintf("Object '%s' with %d part(s)", obj.Name, len(obj.Parts)))
-		for _, part := range obj.Parts {
-			filamentInfo := ""
-			if part.Filament > 0 {
-				filamentInfo = fmt.Sprintf(" [filament %d]", part.Filament)
+	// Display configuration summary only in verbose mode
+	if ui.IsVerbose() {
+		for _, obj := range cfg.Objects {
+			ui.PrintItem(fmt.Sprintf("Object: %s (%d part%s)", obj.Name, len(obj.Parts), pluralize(len(obj.Parts))))
+			for _, part := range obj.Parts {
+				filamentInfo := ""
+				if part.Filament > 0 {
+					filamentInfo = fmt.Sprintf(" [filament %d]", part.Filament)
+				}
+				ui.PrintItem(fmt.Sprintf("  └─ %s: %s%s", part.Name, filepath.Base(part.File), filamentInfo))
 			}
-			ui.PrintStep(fmt.Sprintf("  - %s: %s%s", part.Name, filepath.Base(part.File), filamentInfo))
 		}
 	}
 	return nil
@@ -419,11 +453,12 @@ func (s *CheckPreconditionsStep) Name() string {
 }
 
 func (s *CheckPreconditionsStep) Execute() error {
-	ui.PrintHeader("Checking preconditions...")
 	if err := preconditions.Check(); err != nil {
 		return fmt.Errorf("OpenSCAD not found: %w", err)
 	}
-	ui.PrintSuccess("OpenSCAD is installed")
+	if ui.IsVerbose() {
+		ui.PrintSuccess("✓ OpenSCAD is available")
+	}
 	return nil
 }
 
@@ -435,8 +470,6 @@ func (s *ValidateFilesStep) Name() string {
 }
 
 func (s *ValidateFilesStep) Execute() error {
-	ui.PrintStep("Validating files...")
-
 	var allPaths []string
 	if buildContext.YAMLConfig != nil {
 		loader := config.NewLoader()
@@ -455,6 +488,9 @@ func (s *ValidateFilesStep) Execute() error {
 		if err := preconditions.ValidateFiles(allPaths); err != nil {
 			return err
 		}
+		if ui.IsVerbose() {
+			ui.PrintSuccess(fmt.Sprintf("✓ Validated %d file(s)", len(allPaths)))
+		}
 	}
 	return nil
 }
@@ -467,8 +503,6 @@ func (s *RenderSCADFilesStep) Name() string {
 }
 
 func (s *RenderSCADFilesStep) Execute() error {
-	ui.PrintHeader("Rendering SCAD files...")
-
 	if len(buildContext.SCADFiles) == 0 {
 		return fmt.Errorf("no SCAD files to render")
 	}
@@ -479,15 +513,22 @@ func (s *RenderSCADFilesStep) Execute() error {
 		scadPaths = append(scadPaths, scad.Path)
 	}
 
+	if !ui.IsVerbose() {
+		ui.PrintInfo(fmt.Sprintf("Rendering %d SCAD file(s)...", len(scadPaths)))
+	}
+	
 	tempFiles, err := renderer.RenderMultipleSCAD(baseDir, scadPaths)
 	if err != nil {
 		return err
 	}
 	buildContext.RenderedFiles = tempFiles
 
-	for _, scad := range buildContext.SCADFiles {
-		ui.PrintStep("Rendered " + filepath.Base(scad.Path) + " → " + scad.Name)
+	if ui.IsVerbose() {
+		for _, scad := range buildContext.SCADFiles {
+			ui.PrintItem(fmt.Sprintf("✓ %s → %s", filepath.Base(scad.Path), scad.Name))
+		}
 	}
+	ui.PrintSuccess(fmt.Sprintf("Rendered %d file(s)", len(tempFiles)))
 	return nil
 }
 
@@ -499,23 +540,23 @@ func (s *CombineWithGroupsStep) Name() string {
 }
 
 func (s *CombineWithGroupsStep) Execute() error {
-	ui.PrintHeader("Combining 3MF files...")
-
 	defer renderer.CleanupTempFiles(buildContext.RenderedFiles)
 
+	ui.PrintInfo("Merging objects and materials...")
+	
 	combiner := threemf.NewCombiner()
 	if err := combiner.CombineWithGroups(buildContext.RenderedFiles, buildContext.SCADFiles, buildContext.OutputFile); err != nil {
 		return err
 	}
 
 	// Print success
-	ui.PrintSuccess("Combined 3MF file created: " + buildContext.OutputFile)
+	ui.PrintSuccess("Combined 3MF file created!")
 
 	// Show objects using the same printer as inspect
 	inspector := inspect.NewInspector()
 	model, settings, err := inspector.Read3MFFile(buildContext.OutputFile)
 	if err == nil {
-		ui.PrintHeader("Objects in Model:")
+		ui.PrintHeader("Model Contents")
 		printer := inspect.NewModelPrinter()
 		printer.PrintObjectHierarchy(model, settings)
 	}
@@ -681,13 +722,13 @@ func (s *Validate3MFFilesStep) Name() string {
 }
 
 func (s *Validate3MFFilesStep) Execute() error {
-	ui.PrintHeader("Validating 3MF files...")
 	for _, file := range s.Files {
 		if _, err := os.Stat(file); err != nil {
 			return fmt.Errorf("file not found: %s", file)
 		}
-		ui.PrintStep("Found " + file)
+		ui.PrintItem(fmt.Sprintf("✓ %s", filepath.Base(file)))
 	}
+	ui.PrintSuccess(fmt.Sprintf("Validated %d 3MF file(s)", len(s.Files)))
 	return nil
 }
 
@@ -702,12 +743,12 @@ func (s *Combine3MFFilesStep) Name() string {
 }
 
 func (s *Combine3MFFilesStep) Execute() error {
-	ui.PrintHeader("Combining 3MF files...")
+	ui.PrintInfo("Merging 3MF files...")
 	combiner := combine.NewCombiner()
 	if err := combiner.Combine(s.Files, s.OutputFile); err != nil {
 		return err
 	}
-	ui.PrintSuccess("Combined 3MF file created: " + s.OutputFile)
+	ui.PrintSuccess("Combined 3MF created successfully!")
 	return nil
 }
 
@@ -721,13 +762,13 @@ func (s *ValidateSTLFilesStep) Name() string {
 }
 
 func (s *ValidateSTLFilesStep) Execute() error {
-	ui.PrintHeader("Validating STL files...")
 	for _, file := range s.Files {
 		if _, err := os.Stat(file); err != nil {
 			return fmt.Errorf("file not found: %s", file)
 		}
-		ui.PrintStep("Found " + file)
+		ui.PrintItem(fmt.Sprintf("✓ %s", filepath.Base(file)))
 	}
+	ui.PrintSuccess(fmt.Sprintf("Validated %d STL file(s)", len(s.Files)))
 	return nil
 }
 
@@ -741,25 +782,25 @@ func (s *ConvertSTLTo3MFStep) Name() string {
 }
 
 func (s *ConvertSTLTo3MFStep) Execute() error {
-	ui.PrintHeader("Converting STL files to 3MF...")
-
 	converter := stl.NewConverter()
 	buildContext.RenderedFiles = []string{}
 	buildContext.OriginalSTLs = s.Files
 
+	ui.PrintInfo(fmt.Sprintf("Converting %d STL file(s) to 3MF...", len(s.Files)))
+	
 	for i, stlFile := range s.Files {
 		// Create temp 3MF file
 		tempFile := filepath.Join(os.TempDir(), fmt.Sprintf("stl_converted_%d.3mf", i))
 
-		ui.PrintStep(fmt.Sprintf("Converting %s to 3MF...", filepath.Base(stlFile)))
 		if err := converter.ConvertTo3MF(stlFile, tempFile); err != nil {
 			return fmt.Errorf("error converting %s: %w", stlFile, err)
 		}
 
 		buildContext.RenderedFiles = append(buildContext.RenderedFiles, tempFile)
-		ui.PrintSuccess(fmt.Sprintf("Converted to %s", tempFile))
+		ui.PrintItem(fmt.Sprintf("✓ %s → %s", filepath.Base(stlFile), filepath.Base(tempFile)))
 	}
-
+	
+	ui.PrintSuccess(fmt.Sprintf("Converted %d file(s)", len(s.Files)))
 	return nil
 }
 

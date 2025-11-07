@@ -24,15 +24,15 @@ func ParseTransformOffset(transform string) (x, y, z float64, ok bool) {
 	if len(parts) != 12 {
 		return 0, 0, 0, false
 	}
-	
+
 	x, errX := strconv.ParseFloat(parts[9], 64)
 	y, errY := strconv.ParseFloat(parts[10], 64)
 	z, errZ := strconv.ParseFloat(parts[11], 64)
-	
+
 	if errX != nil || errY != nil || errZ != nil {
 		return 0, 0, 0, false
 	}
-	
+
 	return x, y, z, true
 }
 
@@ -81,43 +81,48 @@ func (p *ModelPrinter) PrintObjectHierarchy(model *models.Model, settings *model
 	}
 
 	if objectCount == 0 {
-		ui.PrintStep("No objects found")
+		ui.PrintInfo("No objects found")
 	}
 }
 
 // printObject recursively prints an object and its components
 func (p *ModelPrinter) printObject(model *models.Model, obj *models.Object, settingsMap map[string]*models.SettingsObject, partsMap map[string]*models.Part, depth int) {
-	indent := strings.Repeat("  ", depth)
-
 	name := obj.Name
 	if name == "" {
 		name = "(unnamed)"
 	}
 
 	// Get filament information
-	filamentInfo := ""
+	filament := ""
 	if settings, ok := settingsMap[obj.ID]; ok {
 		for _, meta := range settings.Metadata {
 			if meta.Key == "extruder" && meta.Value != "" {
-				filamentInfo = fmt.Sprintf(" (filament: %s)", meta.Value)
+				filament = fmt.Sprintf("filament:%-2s", meta.Value)
 				break
 			}
 		}
 	}
 
-	// Check if this object has a mesh (actual geometry)
-	hasMesh := obj.Mesh != nil
-	meshInfo := ""
-	if hasMesh {
-		meshInfo = " [has mesh]"
+	// Build details
+	details := []string{}
+	if obj.Mesh != nil {
+		details = append(details, "mesh")
+	}
+	if obj.Components != nil && len(obj.Components.Component) > 0 {
+		details = append(details, fmt.Sprintf("%d parts", len(obj.Components.Component)))
 	}
 
-	// Print the object
-	if obj.Components != nil && len(obj.Components.Component) > 0 {
-		// Parent object with components
-		ui.PrintStep(fmt.Sprintf("%s• %s (ID: %s) - %d part(s)%s%s", indent, name, obj.ID, len(obj.Components.Component), filamentInfo, meshInfo))
+	// Format the line with proper spacing
+	detailStr := ""
+	if len(details) > 0 {
+		detailStr = fmt.Sprintf("[%s]", strings.Join(details, ", "))
+	}
 
-		// Print each component
+	line := fmt.Sprintf("%-30s  id:%-6s  %-14s  %s", name, obj.ID, filament, detailStr)
+	ui.PrintItem(strings.TrimRight(line, " "))
+
+	// Print each component
+	if obj.Components != nil {
 		for _, comp := range obj.Components.Component {
 			// Find the component object
 			for _, compObj := range model.Resources.Objects {
@@ -127,45 +132,45 @@ func (p *ModelPrinter) printObject(model *models.Model, obj *models.Object, sett
 				}
 			}
 		}
-	} else {
-		// Leaf object (just a mesh)
-		ui.PrintStep(fmt.Sprintf("%s• %s (ID: %s)%s%s", indent, name, obj.ID, filamentInfo, meshInfo))
 	}
 }
 
 // printComponent prints a component with its filament information
 func (p *ModelPrinter) printComponent(obj *models.Object, comp models.Component, partsMap map[string]*models.Part, depth int) {
-	indent := strings.Repeat("  ", depth)
-
 	name := obj.Name
 	if name == "" {
 		name = "(unnamed)"
 	}
 
+	// Add indentation prefix
+	name = "  └─ " + name
+
 	// Get filament information from part settings
-	filamentInfo := ""
+	filament := ""
 	if part, ok := partsMap[obj.ID]; ok {
 		for _, meta := range part.Metadata {
 			if meta.Key == "extruder" && meta.Value != "" {
-				filamentInfo = fmt.Sprintf(" (filament: %s)", meta.Value)
+				filament = fmt.Sprintf("filament:%-2s", meta.Value)
 				break
 			}
 			if meta.Key == "name" && meta.Value != "" {
-				name = meta.Value
+				name = "  └─ " + meta.Value
 			}
 		}
 	}
 
 	// Get offset information from transform
-	offsetInfo := ""
+	offset := ""
 	if comp.Transform != "" {
 		if x, y, z, ok := parseTransformOffset(comp.Transform); ok {
 			// Only show offset if it's not zero
 			if x != 0 || y != 0 || z != 0 {
-				offsetInfo = fmt.Sprintf(" [offset: %.2f, %.2f, %.2f]", x, y, z)
+				offset = fmt.Sprintf("[offset: %.1f, %.1f, %.1f]", x, y, z)
 			}
 		}
 	}
 
-	ui.PrintStep(fmt.Sprintf("%s- %s (ID: %s)%s%s", indent, name, obj.ID, filamentInfo, offsetInfo))
+	// Format the line with proper spacing
+	line := fmt.Sprintf("%-30s  id:%-6s  %-14s  %s", name, obj.ID, filament, offset)
+	ui.PrintItem(strings.TrimRight(line, " "))
 }

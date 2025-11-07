@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/user/go3mf/internal/models"
 	"github.com/user/go3mf/internal/ui"
@@ -26,7 +27,8 @@ func (i *Inspector) Inspect(filename string) error {
 		return fmt.Errorf("file not found: %s", filename)
 	}
 
-	ui.PrintHeader(fmt.Sprintf("Inspecting: %s", filename))
+	ui.PrintTitle("3MF File Inspector")
+	ui.PrintKeyValue("File", filename)
 
 	// Read the 3MF file
 	model, settings, err := i.read3MFFile(filename)
@@ -35,47 +37,57 @@ func (i *Inspector) Inspect(filename string) error {
 	}
 
 	// Print basic information
-	ui.PrintStep(fmt.Sprintf("Unit: %s", model.Unit))
-	ui.PrintStep(fmt.Sprintf("Language: %s", model.Lang))
+	ui.PrintHeader("File Information")
+	ui.PrintKeyValue("Unit", model.Unit)
+	ui.PrintKeyValue("Language", model.Lang)
 
 	// Print metadata if available
 	if len(model.Metadata) > 0 {
-		ui.PrintStep("Metadata:")
+		ui.PrintHeader("Metadata")
 		for _, meta := range model.Metadata {
-			ui.PrintStep(fmt.Sprintf("  - %s: %s", meta.Name, meta.Value))
+			ui.PrintKeyValue(meta.Name, meta.Value)
 		}
 	}
 
 	// Print build items (what's on the build plate)
-	ui.PrintHeader("Build Plate Items:")
+	ui.PrintHeader("Build Plate Items")
 	if len(model.Build.Items) == 0 {
-		ui.PrintStep("No items on build plate")
+		ui.PrintInfo("No items on build plate")
 	} else {
 		for idx, item := range model.Build.Items {
 			objectName := i.getObjectName(model, item.ObjectID)
-			printable := "yes"
+			printable := "✓ yes"
 			if item.Printable == "0" {
-				printable = "no"
+				printable = "✗ no"
 			}
-			
+
 			// Get offset information from transform
 			offsetInfo := ""
 			if item.Transform != "" {
 				if x, y, z, ok := ParseTransformOffset(item.Transform); ok {
 					if x != 0 || y != 0 || z != 0 {
-						offsetInfo = fmt.Sprintf(" [offset: %.2f, %.2f, %.2f]", x, y, z)
+						offsetInfo = fmt.Sprintf(" 📍 [%.2f, %.2f, %.2f]", x, y, z)
 					}
 				}
 			}
-			
-			ui.PrintStep(fmt.Sprintf("%d. Object ID %s: %s (printable: %s)%s", idx+1, item.ObjectID, objectName, printable, offsetInfo))
+
+			ui.PrintItem(fmt.Sprintf("#%d Object %s: %s (printable: %s)%s", idx+1, item.ObjectID, objectName, printable, offsetInfo))
 		}
 	}
 
 	// Print object hierarchy
-	ui.PrintHeader("Objects in Model:")
+	ui.PrintHeader("Model Objects")
 	printer := NewModelPrinter()
 	printer.PrintObjectHierarchy(model, settings)
+
+	ui.PrintSeparator()
+	ui.PrintSuccess("Inspection complete!")
+	// Convert to relative path if possible
+	relPath, err := filepath.Rel(".", filename)
+	if err != nil {
+		relPath = filename
+	}
+	ui.PrintKeyValue("File", relPath)
 
 	return nil
 }

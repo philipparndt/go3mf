@@ -48,24 +48,45 @@ func (c *CombineScadCmd) Run() error {
 
 	// Parse input files
 	var scadFiles []models.ScadFile
-	for i, arg := range c.Files {
+	for _, arg := range c.Files {
 		parts := strings.Split(arg, ":")
 		path := parts[0]
 
+		// Convert to absolute path
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			ui.PrintError(fmt.Sprintf("Invalid file path %s: %v", path, err))
+			os.Exit(1)
+		}
+
 		// Use custom name if provided
 		name := ""
+		filamentSlot := 0 // 0 means auto-assign
+
 		if len(parts) > 1 {
 			name = parts[1]
 		} else {
 			// Use filename without extension
-			name = filepath.Base(path[:len(path)-len(filepath.Ext(path))])
-			// For the first file, default to "button" if no custom name given
-			if i == 0 {
-				name = "button"
+			name = filepath.Base(absPath[:len(absPath)-len(filepath.Ext(absPath))])
+		}
+
+		// Parse optional filament slot (format: path:name:slot)
+		if len(parts) > 2 {
+			slot := 0
+			_, err := fmt.Sscanf(parts[2], "%d", &slot)
+			if err == nil && slot >= 1 && slot <= 4 {
+				filamentSlot = slot
+			} else {
+				ui.PrintError(fmt.Sprintf("Invalid filament slot '%s' for %s. Must be 1-4.", parts[2], path))
+				os.Exit(1)
 			}
 		}
 
-		scadFiles = append(scadFiles, models.ScadFile{Path: path, Name: name})
+		scadFiles = append(scadFiles, models.ScadFile{
+			Path:         absPath,
+			Name:         name,
+			FilamentSlot: filamentSlot,
+		})
 	}
 
 	// Render SCAD files

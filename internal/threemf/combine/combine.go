@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/user/go3mf/internal/models"
 )
@@ -26,47 +27,74 @@ func (c *Combiner) Combine(inputFiles []string, outputFile string) error {
 		return fmt.Errorf("at least 2 files required for combining")
 	}
 
-	// Read the base model
-	baseModel, baseSourceFile, err := c.readModel(inputFiles[0])
-	if err != nil {
-		return fmt.Errorf("error reading base file: %w", err)
-	}
-
-	// Update base object name from filename
-	if len(baseModel.Resources.Objects) > 0 {
-		name := filepath.Base(inputFiles[0][:len(inputFiles[0])-len(filepath.Ext(inputFiles[0]))])
-		baseModel.Resources.Objects[0].Name = name
-	}
-
-	// Combine other models
-	maxID := c.getMaxObjectID(baseModel)
-	for i := 1; i < len(inputFiles); i++ {
-		otherModel, _, err := c.readModel(inputFiles[i])
+	var allObjects []models.Object
+	var scadFiles []models.ScadFile
+	
+	// Read all models and collect their objects
+	for i, inputFile := range inputFiles {
+		model, _, err := c.readModel(inputFile)
 		if err != nil {
-			return fmt.Errorf("error reading file %d (%s): %w", i+1, inputFiles[i], err)
+			return fmt.Errorf("error reading file %d (%s): %w", i+1, inputFile, err)
 		}
 
 		// Get name from filename
-		name := filepath.Base(inputFiles[i][:len(inputFiles[i])-len(filepath.Ext(inputFiles[i]))])
-
-		// Add objects from other model
-		for _, obj := range otherModel.Resources.Objects {
-			maxID++
-			obj.ID = strconv.Itoa(maxID)
+		name := filepath.Base(inputFile[:len(inputFile)-len(filepath.Ext(inputFile))])
+		
+		// Collect mesh objects
+		for _, obj := range model.Resources.Objects {
+			obj.ID = strconv.Itoa(i + 1)
 			obj.Name = name
-
-			baseModel.Resources.Objects = append(baseModel.Resources.Objects, obj)
-
-			// Add item to build
-			baseModel.Build.Items = append(baseModel.Build.Items, models.Item{
-				ObjectID:  obj.ID,
-				Transform: "1 0 0 0 1 0 0 0 1 0 0 0",
-			})
+			obj.UUID = "" // Will be set in components
+			allObjects = append(allObjects, obj)
 		}
+		
+		// Create ScadFile entry for settings (auto-assign filament)
+		scadFiles = append(scadFiles, models.ScadFile{
+			Path:         inputFile,
+			Name:         name,
+			FilamentSlot: 0, // Auto-assign
+		})
+	}
+
+	// Create a parent object with components
+	var components []models.Component
+	for i := range allObjects {
+		components = append(components, models.Component{
+			ObjectID:  strconv.Itoa(i + 1),
+			Transform: "1 0 0 0 1 0 0 0 1 0 0 0",
+		})
+	}
+
+	parentID := strconv.Itoa(len(allObjects) + 1)
+	parentObject := models.Object{
+		ID:   parentID,
+		Type: "model",
+		Components: &models.Components{
+			Component: components,
+		},
+	}
+
+	// Create the combined model
+	combinedModel := &models.Model{
+		Xmlns: "http://schemas.microsoft.com/3dmanufacturing/core/2015/02",
+		Unit:  "millimeter",
+		Lang:  "en-US",
+		Resources: models.Resources{
+			Objects: append(allObjects, parentObject),
+		},
+		Build: models.Build{
+			Items: []models.Item{
+				{
+					ObjectID:  parentID,
+					Transform: "1 0 0 0 1 0 0 0 1 0 0 0",
+					Printable: "1",
+				},
+			},
+		},
 	}
 
 	// Write combined model
-	return c.writeModel(outputFile, baseModel, baseSourceFile)
+	return c.writeModelBambu(outputFile, combinedModel, inputFiles[0], scadFiles)
 }
 
 // readModel reads and parses a 3MF file
@@ -106,6 +134,77 @@ func (c *Combiner) readModel(filename string) (*models.Model, string, error) {
 	}
 
 	return &model, filename, nil
+}
+
+// writeModelBambu writes a model to a 3MF file with Bambu Studio support
+func (c *Combiner) writeModelBambu(outputFile string, model *models.Model, sourceFile string, scadFiles []models.ScadFile) error {
+	// Add Bambu metadata
+	addBambuMetadata(model)
+	
+	// Read source ZIP to get metadata
+	sourceZip, err := zip.OpenReader(sourceFile)
+	if err != nil {
+		return fmt.Errorf("error opening source file: %w", err)
+	}
+	defer sourceZip.Close()
+
+	// Create output ZIP
+	outFile, err := os.Create(outputFile)
+	if err != nil {
+		return fmt.Errorf("error creating output file: %w", err)
+	}
+	defer outFile.Close()
+
+	outZip := zip.NewWriter(outFile)
+	defer outZip.Close()
+
+	// Write model XML
+	modelXML, err := xml.MarshalIndent(model, "", "\t")
+	if err != nil {
+		return fmt.Errorf("error marshaling XML: %w", err)
+	}
+
+	w, err := outZip.Create("3D/3dmodel.model")
+	if err != nil {
+		return fmt.Errorf("error creating model entry: %w", err)
+	}
+
+	// Write XML declaration
+	if _, err := w.Write([]byte(xml.Header)); err != nil {
+		return fmt.Errorf("error writing XML header: %w", err)
+	}
+
+	if _, err := w.Write(modelXML); err != nil {
+		return fmt.Errorf("error writing model XML: %w", err)
+	}
+
+	// Write Bambu model settings
+	if err := writeModelSettings(outZip, scadFiles); err != nil {
+		return fmt.Errorf("error writing model settings: %w", err)
+	}
+
+	// Copy other files from source
+	for _, file := range sourceZip.File {
+		if file.Name == "3D/3dmodel.model" || file.Name == "Metadata/model_settings.config" {
+			continue
+		}
+
+		srcFile, err := file.Open()
+		if err != nil {
+			continue
+		}
+
+		dst, err := outZip.Create(file.Name)
+		if err != nil {
+			srcFile.Close()
+			continue
+		}
+
+		io.Copy(dst, srcFile)
+		srcFile.Close()
+	}
+
+	return nil
 }
 
 // writeModel writes a model to a 3MF file
@@ -185,3 +284,111 @@ func (c *Combiner) getMaxObjectID(model *models.Model) int {
 	}
 	return maxID
 }
+
+// addBambuMetadata adds Bambu Studio specific metadata to a model
+func addBambuMetadata(model *models.Model) {
+	model.XmlnsBambuStudio = "http://schemas.bambulab.com/package/2021"
+	model.XmlnsP = "http://schemas.microsoft.com/3dmanufacturing/production/2015/06"
+	model.RequiredExtensions = "p"
+	
+	// Add Bambu-specific metadata
+	model.Metadata = append([]models.Metadata{
+		{Name: "Application", Value: "go3mf"},
+		{Name: "BambuStudio:3mfVersion", Value: "1"},
+		{Name: "CreationDate", Value: time.Now().Format("2006-01-02")},
+		{Name: "ModificationDate", Value: time.Now().Format("2006-01-02")},
+	}, model.Metadata...)
+}
+
+// writeModelSettings writes the Bambu Studio model_settings.config file
+func writeModelSettings(outZip *zip.Writer, scadFiles []models.ScadFile) error {
+	// Create parts with filament assignments
+	var parts []models.Part
+	totalFaces := 0
+	
+	for i, scadFile := range scadFiles {
+		filamentSlot := scadFile.FilamentSlot
+		if filamentSlot == 0 {
+			filamentSlot = ((i) % 4) + 1
+		}
+
+		faceCount := 12 // Placeholder - would need actual mesh analysis
+		totalFaces += faceCount
+		
+		parts = append(parts, models.Part{
+			ID:      strconv.Itoa(i + 1),
+			Subtype: "normal_part",
+			Metadata: []models.SettingsMetadata{
+				{Key: "name", Value: scadFile.Name},
+				{Key: "matrix", Value: "1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"},
+				{Key: "source_file", Value: "combined.3mf"},
+				{Key: "source_object_id", Value: strconv.Itoa(i)},
+				{Key: "source_volume_id", Value: "0"},
+				{Key: "extruder", Value: strconv.Itoa(filamentSlot)},
+			},
+			MeshStat: models.MeshStat{
+				FaceCount: faceCount,
+			},
+		})
+	}
+
+	parentID := strconv.Itoa(len(scadFiles) + 1)
+	
+	settings := models.ModelSettings{
+		Object: models.SettingsObject{
+			ID: parentID,
+			Metadata: []models.SettingsMetadata{
+				{Key: "name", Value: "combined"},
+				{Key: "extruder", Value: "1"},
+				{FaceCount: totalFaces},
+			},
+			Parts: parts,
+		},
+		Plate: models.Plate{
+			Metadata: []models.SettingsMetadata{
+				{Key: "plater_id", Value: "1"},
+				{Key: "plater_name", Value: ""},
+				{Key: "locked", Value: "false"},
+				{Key: "filament_map_mode", Value: "Auto For Flush"},
+			},
+			ModelInstance: models.ModelInstance{
+				Metadata: []models.SettingsMetadata{
+					{Key: "object_id", Value: parentID},
+					{Key: "instance_id", Value: "0"},
+					{Key: "identify_id", Value: "1"},
+				},
+			},
+		},
+		Assemble: models.Assemble{
+			Items: []models.AssembleItem{
+				{
+					ObjectID:   parentID,
+					InstanceID: "0",
+					Transform:  "1 0 0 0 1 0 0 0 1 0 0 0",
+					Offset:     "0 0 0",
+				},
+			},
+		},
+	}
+
+	settingsXML, err := xml.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return fmt.Errorf("error marshaling settings XML: %w", err)
+	}
+
+	writer, err := outZip.Create("Metadata/model_settings.config")
+	if err != nil {
+		return fmt.Errorf("error creating settings entry: %w", err)
+	}
+
+	if _, err := writer.Write([]byte(xml.Header)); err != nil {
+		return fmt.Errorf("error writing XML header: %w", err)
+	}
+
+	if _, err := writer.Write(settingsXML); err != nil {
+		return fmt.Errorf("error writing settings XML: %w", err)
+	}
+
+	return nil
+}
+

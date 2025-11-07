@@ -56,6 +56,81 @@ func (r *Reader) Read(filename string) (*models.Model, error) {
 // Writer writes 3MF files
 type Writer struct{}
 
+// WriteBambu writes a model to a 3MF file with Bambu Studio support
+func (w *Writer) WriteBambu(outputFile string, model *models.Model, sourceFile string, scadFiles []models.ScadFile) error {
+	// Add Bambu metadata
+	AddBambuMetadata(model)
+	
+	// Read source ZIP to get metadata files
+	sourceZip, err := zip.OpenReader(sourceFile)
+	if err != nil {
+		return fmt.Errorf("error opening source ZIP: %w", err)
+	}
+	defer sourceZip.Close()
+
+	// Create output ZIP
+	outFile, err := os.Create(outputFile)
+	if err != nil {
+		return fmt.Errorf("error creating output file: %w", err)
+	}
+	defer outFile.Close()
+
+	outZip := zip.NewWriter(outFile)
+	defer outZip.Close()
+
+	// Write model XML
+	modelXML, err := xml.MarshalIndent(model, "", "\t")
+	if err != nil {
+		return fmt.Errorf("error marshaling XML: %w", err)
+	}
+
+	w_, err := outZip.Create("3D/3dmodel.model")
+	if err != nil {
+		return fmt.Errorf("error creating model entry: %w", err)
+	}
+
+	// Write XML declaration
+	if _, err := w_.Write([]byte(xml.Header)); err != nil {
+		return fmt.Errorf("error writing XML header: %w", err)
+	}
+
+	if _, err := w_.Write(modelXML); err != nil {
+		return fmt.Errorf("error writing model XML: %w", err)
+	}
+
+	// Write Bambu model settings
+	if err := WriteModelSettings(outZip, scadFiles); err != nil {
+		return fmt.Errorf("error writing model settings: %w", err)
+	}
+
+	// Copy other files from source
+	for _, file := range sourceZip.File {
+		if file.Name == "3D/3dmodel.model" || file.Name == "Metadata/model_settings.config" {
+			continue
+		}
+
+		srcFile, err := file.Open()
+		if err != nil {
+			return fmt.Errorf("error opening source file: %w", err)
+		}
+
+		dst, err := outZip.Create(file.Name)
+		if err != nil {
+			srcFile.Close()
+			return fmt.Errorf("error creating ZIP entry: %w", err)
+		}
+
+		if _, err := io.Copy(dst, srcFile); err != nil {
+			srcFile.Close()
+			return fmt.Errorf("error copying file: %w", err)
+		}
+
+		srcFile.Close()
+	}
+
+	return nil
+}
+
 // Write writes a model to a 3MF file, copying metadata from sourceFile
 func (w *Writer) Write(outputFile string, model *models.Model, sourceFile string) error {
 	// Read source ZIP to get metadata files
@@ -139,43 +214,63 @@ func NewCombiner() *Combiner {
 
 // Combine combines multiple 3MF files into one
 func (c *Combiner) Combine(tempFiles []string, scadFiles []models.ScadFile, outputFile string) error {
-	// Read the base model
-	baseModel, err := c.reader.Read(tempFiles[0])
-	if err != nil {
-		return fmt.Errorf("error reading base 3MF: %w", err)
-	}
-
-	// Update base object name
-	if len(baseModel.Resources.Objects) > 0 {
-		baseModel.Resources.Objects[0].Name = scadFiles[0].Name
-	}
-
-	// Read and combine other models
-	maxID := getMaxObjectID(baseModel)
-	for i := 1; i < len(tempFiles); i++ {
-		otherModel, err := c.reader.Read(tempFiles[i])
+	var allObjects []models.Object
+	
+	// Read all models and collect their objects
+	for i, tempFile := range tempFiles {
+		model, err := c.reader.Read(tempFile)
 		if err != nil {
 			return fmt.Errorf("error reading 3MF file %d: %w", i, err)
 		}
 
-		// Add objects from other models
-		for _, obj := range otherModel.Resources.Objects {
-			maxID++
-			obj.ID = strconv.Itoa(maxID)
+		// Collect mesh objects
+		for _, obj := range model.Resources.Objects {
+			obj.ID = strconv.Itoa(i + 1)
 			obj.Name = scadFiles[i].Name
-
-			baseModel.Resources.Objects = append(baseModel.Resources.Objects, obj)
-
-			// Add item to build
-			baseModel.Build.Items = append(baseModel.Build.Items, models.Item{
-				ObjectID:  obj.ID,
-				Transform: "1 0 0 0 1 0 0 0 1 0 0 0",
-			})
+			obj.UUID = "" // Will be set in components
+			allObjects = append(allObjects, obj)
 		}
 	}
 
-	// Write combined model to output file
-	return c.writer.Write(outputFile, baseModel, tempFiles[0])
+	// Create a parent object with components
+	var components []models.Component
+	for i := range allObjects {
+		components = append(components, models.Component{
+			ObjectID:  strconv.Itoa(i + 1),
+			Transform: "1 0 0 0 1 0 0 0 1 0 0 0",
+		})
+	}
+
+	parentID := strconv.Itoa(len(allObjects) + 1)
+	parentObject := models.Object{
+		ID:   parentID,
+		Type: "model",
+		Components: &models.Components{
+			Component: components,
+		},
+	}
+
+	// Create the combined model
+	combinedModel := &models.Model{
+		Xmlns: "http://schemas.microsoft.com/3dmanufacturing/core/2015/02",
+		Unit:  "millimeter",
+		Lang:  "en-US",
+		Resources: models.Resources{
+			Objects: append(allObjects, parentObject),
+		},
+		Build: models.Build{
+			Items: []models.Item{
+				{
+					ObjectID:  parentID,
+					Transform: "1 0 0 0 1 0 0 0 1 0 0 0",
+					Printable: "1",
+				},
+			},
+		},
+	}
+
+	// Write combined model to output file with Bambu support
+	return c.writer.WriteBambu(outputFile, combinedModel, tempFiles[0], scadFiles)
 }
 
 func getMaxObjectID(model *models.Model) int {

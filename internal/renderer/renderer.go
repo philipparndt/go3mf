@@ -4,11 +4,18 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 )
 
 // RenderSCAD renders a SCAD file to 3MF format
 func RenderSCAD(workDir, scadFile, outputFile string) error {
-	cmd := exec.Command("openscad", "-o", outputFile, scadFile)
+	// Convert scadFile to absolute path if it's relative
+	absScadFile := scadFile
+	if !filepath.IsAbs(scadFile) {
+		absScadFile = filepath.Join(workDir, scadFile)
+	}
+	
+	cmd := exec.Command("openscad", "-o", outputFile, absScadFile)
 	cmd.Dir = workDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

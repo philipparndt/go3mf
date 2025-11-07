@@ -1,0 +1,40 @@
+# Example configuration for plate with text demo
+# This demonstrates how to use config files to customize SCAD rendering
+
+# Output file path
+output: plate_with_text_demo.3mf
+
+# Define objects
+objects:
+  # Plate and text assembly
+  - name: PlateAssembly
+    config:
+      - cfg.scad: |
+          // Global configuration for the plate assembly
+          function plate_width() = 120;
+          function plate_height() = 80;
+          function plate_thickness() = 4;
+          function text_content() = "Go3MF";
+          function text_size() = 16;
+          function text_height() = 1.5;
+          function text_font() = "Arial:style=Bold";
+    parts:
+      - name: base_plate
+        file: plate.scad
+        filament: 1  # Base color
+      
+      - name: text_overlay
+        file: text.scad
+        filament: 2  # Different color for text
+        config:
+          - cfg.scad: |
+              // Override text configuration for this part
+              function text_content() = "DEMO";
+              function text_size() = 20;
+              function text_height() = 2;
+
+# Notes:
+# - The plate uses the global config for dimensions
+# - The text part overrides some config values for different text
+# - Each part gets a different filament color (1 and 2)
+# - Config files are written to the working directory during rendering

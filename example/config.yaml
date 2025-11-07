@@ -6,26 +6,48 @@ output: combined_from_yaml.3mf
 
 # Define objects - each object groups related parts
 objects:
-  # First object - a simple single-part object
+  # First object - a simple single-part object with inline config files
   - name: Base
+    config:
+      - cfg-label.scad: |
+          function txt() = "my-label";
+          function only_txt() = false;
+      - cfg-distance.scad: |
+          function distance() = 2;
     parts:
       - name: platform
         file: a.scad
         filament: 1  # Use AMS slot 1 (optional, 0 or omit for auto-assign)
 
-  # Second object - a multi-part object
+  # Second object - a multi-part object with mixed config files
   - name: Assembly
+    config:
+      - cfg-global.scad: |
+          function default_height() = 10;
+          function default_width() = 20;
     parts:
       - name: main_body
         file: b.scad
         filament: 2  # Use AMS slot 2
+        config:
+          - cfg-main.scad: |
+              function body_color() = "red";
+              function body_scale() = 1.5;
       
       - name: cover
         file: a.scad
         filament: 3  # Use AMS slot 3
+        config:
+          - cfg-cover.scad: |
+              function cover_thickness() = 2;
+              function cover_material() = "plastic";
 
 # Notes:
 # - File paths can be relative to this YAML file or absolute
 # - Filament values: 0 or omitted = auto-assign, 1-4 = AMS slots
+# - Config files can be defined at object level (applied to all parts) or part level
+# - Part-level config files override object-level config files with the same name
+# - Multiple config files can be specified as an array of filename->content maps
+# - Config files are written to the working directory during rendering and included by OpenSCAD
 # - Each part will be rendered separately and combined into one 3MF file
 # - Parts within an object will be named as "object_name/part_name" in the output

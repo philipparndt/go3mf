@@ -117,10 +117,29 @@ func (l *Loader) ConvertToScadFiles(config *models.YamlConfig) []models.ScadFile
 				compositeName = obj.Name + "/" + part.Name
 			}
 
+			// Combine object-level and part-level config files
+			// Part-level config takes precedence (overrides object-level for same filename)
+			configFiles := make(map[string]string)
+
+			// Start with object-level configs
+			for _, configMap := range obj.Config {
+				for filename, content := range configMap {
+					configFiles[filename] = content
+				}
+			}
+
+			// Override with part-level configs
+			for _, configMap := range part.Config {
+				for filename, content := range configMap {
+					configFiles[filename] = content
+				}
+			}
+
 			scadFiles = append(scadFiles, models.ScadFile{
 				Path:         part.File,
 				Name:         compositeName,
 				FilamentSlot: part.Filament,
+				ConfigFiles:  configFiles,
 			})
 		}
 	}

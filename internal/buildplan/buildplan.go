@@ -230,7 +230,7 @@ func (p *BuildPlan) Execute() error {
 		ui.PrintInfo(fmt.Sprintf("Total steps: %d", len(p.Steps)))
 		ui.PrintSeparator()
 	}
-	
+
 	for i, step := range p.Steps {
 		if ui.IsVerbose() {
 			ui.PrintHeader(fmt.Sprintf("Step %d/%d: %s", i+1, len(p.Steps), step.Name()))
@@ -239,12 +239,12 @@ func (p *BuildPlan) Execute() error {
 			return err
 		}
 	}
-	
+
 	// Update OutputFile from buildContext if not already set
 	if p.OutputFile == "" && buildContext.OutputFile != "" {
 		p.OutputFile = buildContext.OutputFile
 	}
-	
+
 	ui.PrintSeparator()
 	ui.PrintSuccess("Build completed successfully!")
 	if p.OutputFile != "" {
@@ -310,6 +310,7 @@ type Context struct {
 	SCADFiles     []models.ScadFile
 	RenderedFiles []string
 	OutputFile    string
+	ConfigDir     string   // Directory where the config.yaml file is located
 	OriginalSTLs  []string // Store original STL filenames for proper naming
 }
 
@@ -427,6 +428,7 @@ func (s *LoadYAMLStep) Execute() error {
 	}
 	buildContext.YAMLConfig = cfg
 	buildContext.OutputFile = cfg.Output
+	buildContext.ConfigDir = filepath.Dir(s.ConfigPath)
 	ui.PrintSuccess(fmt.Sprintf("Loaded configuration with %d object(s)", len(cfg.Objects)))
 
 	// Display configuration summary only in verbose mode
@@ -507,17 +509,17 @@ func (s *RenderSCADFilesStep) Execute() error {
 		return fmt.Errorf("no SCAD files to render")
 	}
 
-	baseDir := filepath.Dir(buildContext.SCADFiles[0].Path)
-	var scadPaths []string
-	for _, scad := range buildContext.SCADFiles {
-		scadPaths = append(scadPaths, scad.Path)
+	// Use the config directory as the base directory if available
+	baseDir := buildContext.ConfigDir
+	if baseDir == "" {
+		baseDir = filepath.Dir(buildContext.SCADFiles[0].Path)
 	}
 
 	if !ui.IsVerbose() {
-		ui.PrintInfo(fmt.Sprintf("Rendering %d SCAD file(s)...", len(scadPaths)))
+		ui.PrintInfo(fmt.Sprintf("Rendering %d SCAD file(s)...", len(buildContext.SCADFiles)))
 	}
-	
-	tempFiles, err := renderer.RenderMultipleSCAD(baseDir, scadPaths)
+
+	tempFiles, err := renderer.RenderMultipleSCADWithConfigs(baseDir, buildContext.SCADFiles)
 	if err != nil {
 		return err
 	}
@@ -543,7 +545,7 @@ func (s *CombineWithGroupsStep) Execute() error {
 	defer renderer.CleanupTempFiles(buildContext.RenderedFiles)
 
 	ui.PrintInfo("Merging objects and materials...")
-	
+
 	combiner := threemf.NewCombiner()
 	if err := combiner.CombineWithGroups(buildContext.RenderedFiles, buildContext.SCADFiles, buildContext.OutputFile); err != nil {
 		return err
@@ -787,7 +789,7 @@ func (s *ConvertSTLTo3MFStep) Execute() error {
 	buildContext.OriginalSTLs = s.Files
 
 	ui.PrintInfo(fmt.Sprintf("Converting %d STL file(s) to 3MF...", len(s.Files)))
-	
+
 	for i, stlFile := range s.Files {
 		// Create temp 3MF file
 		tempFile := filepath.Join(os.TempDir(), fmt.Sprintf("stl_converted_%d.3mf", i))
@@ -799,7 +801,7 @@ func (s *ConvertSTLTo3MFStep) Execute() error {
 		buildContext.RenderedFiles = append(buildContext.RenderedFiles, tempFile)
 		ui.PrintItem(fmt.Sprintf("✓ %s → %s", filepath.Base(stlFile), filepath.Base(tempFile)))
 	}
-	
+
 	ui.PrintSuccess(fmt.Sprintf("Converted %d file(s)", len(s.Files)))
 	return nil
 }

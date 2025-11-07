@@ -1,0 +1,42 @@
+# Simple example: Customizable text plate
+# This shows basic config file usage
+
+output: simple_text_plate.3mf
+
+objects:
+  - name: Hello
+    config:
+      - cfg.scad: |
+          function text_content() = "Hello";
+          function text_size() = 14;
+          function plate_width() = 150;
+          function plate_height() = 50;
+          function plate_thickness() = 4;
+          function text_height() = 4;
+    parts:
+      - name: plate
+        file: plate.scad
+        filament: 1
+      
+      - name: text
+        file: text.scad
+        filament: 2
+
+  - name: World
+    config:
+      - cfg.scad: |
+          function text_content() = "World";
+          function text_size() = 14;
+          function plate_width() = 150;
+          function plate_height() = 50;
+          function plate_thickness() = 4;
+          function text_height() = 4;
+
+    parts:
+      - name: plate
+        file: plate.scad
+        filament: 1
+      
+      - name: text
+        file: text.scad
+        filament: 2                

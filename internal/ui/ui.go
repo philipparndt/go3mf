@@ -170,29 +170,29 @@ func PrintTableRow(columns ...string) {
 	if len(columns) == 0 {
 		return
 	}
-	
+
 	// Define column widths
 	widths := []int{30, 15, 20, 30} // Name, ID, Filament, Info
-	
+
 	row := ""
 	for i, col := range columns {
 		if i >= len(widths) {
 			break
 		}
-		
+
 		// Truncate or pad the column
 		if len(col) > widths[i] {
 			col = col[:widths[i]-3] + "..."
 		} else {
 			col = col + strings.Repeat(" ", widths[i]-len(col))
 		}
-		
+
 		row += col
 		if i < len(columns)-1 {
 			row += " │ "
 		}
 	}
-	
+
 	fmt.Println(stepStyle.Render(row))
 }
 
@@ -201,29 +201,29 @@ func PrintTableHeader(headers ...string) {
 	headerStyle := lipgloss.NewStyle().
 		Foreground(secondaryColor).
 		Bold(true)
-	
+
 	widths := []int{30, 15, 20, 30}
 	row := ""
-	
+
 	for i, header := range headers {
 		if i >= len(widths) {
 			break
 		}
-		
+
 		if len(header) > widths[i] {
 			header = header[:widths[i]]
 		} else {
 			header = header + strings.Repeat(" ", widths[i]-len(header))
 		}
-		
+
 		row += header
 		if i < len(headers)-1 {
 			row += " │ "
 		}
 	}
-	
+
 	fmt.Println(stepStyle.Render(headerStyle.Render(row)))
-	
+
 	// Print separator line
 	separator := ""
 	for i := range headers {
@@ -258,19 +258,19 @@ func PrintProgress(current, total int, message string) {
 	if IsVerbose() {
 		return // Don't print progress in verbose mode
 	}
-	
+
 	barWidth := 30
 	filled := (current * barWidth) / total
 	if filled > barWidth {
 		filled = barWidth
 	}
-	
+
 	bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
 	pct := (current * 100) / total
-	
+
 	// Use carriage return to overwrite the line
 	fmt.Printf("\r  [%s] %d%% %s", bar, pct, message)
-	
+
 	// Print newline on completion
 	if current >= total {
 		fmt.Println()

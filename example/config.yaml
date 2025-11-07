@@ -1,0 +1,31 @@
+# Example YAML configuration for go3mf
+# This file demonstrates how to define multiple objects with multiple parts
+
+# Output file path (relative to this config file or absolute)
+output: combined_from_yaml.3mf
+
+# Define objects - each object groups related parts
+objects:
+  # First object - a simple single-part object
+  - name: Base
+    parts:
+      - name: platform
+        file: a.scad
+        filament: 1  # Use AMS slot 1 (optional, 0 or omit for auto-assign)
+
+  # Second object - a multi-part object
+  - name: Assembly
+    parts:
+      - name: main_body
+        file: b.scad
+        filament: 2  # Use AMS slot 2
+      
+      - name: cover
+        file: a.scad
+        filament: 3  # Use AMS slot 3
+
+# Notes:
+# - File paths can be relative to this YAML file or absolute
+# - Filament values: 0 or omitted = auto-assign, 1-4 = AMS slots
+# - Each part will be rendered separately and combined into one 3MF file
+# - Parts within an object will be named as "object_name/part_name" in the output

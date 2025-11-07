@@ -1,0 +1,13 @@
+# Simple example: combine two SCAD files into one 3MF
+output: simple.3mf
+
+objects:
+  - name: PartA
+    parts:
+      - name: main
+        file: a.scad
+
+  - name: PartB
+    parts:
+      - name: main
+        file: b.scad

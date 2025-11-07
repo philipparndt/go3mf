@@ -92,6 +92,25 @@ type ScadFile struct {
 	FilamentSlot int // 1-4 for AMS slots, 0 for auto-assign
 }
 
+// YamlConfig represents the complete YAML configuration file
+type YamlConfig struct {
+	Output  string       `yaml:"output"`
+	Objects []YamlObject `yaml:"objects"`
+}
+
+// YamlObject represents a single object in the model
+type YamlObject struct {
+	Name  string     `yaml:"name"`
+	Parts []YamlPart `yaml:"parts"`
+}
+
+// YamlPart represents a part within an object
+type YamlPart struct {
+	Name     string `yaml:"name"`
+	File     string `yaml:"file"`
+	Filament int    `yaml:"filament,omitempty"` // 1-4 for AMS slots, 0 for auto-assign
+}
+
 // ModelSettings represents the Bambu Studio model_settings.config structure
 type ModelSettings struct {
 	XMLName  xml.Name       `xml:"config"`

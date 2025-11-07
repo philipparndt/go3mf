@@ -273,6 +273,117 @@ func (c *Combiner) Combine(tempFiles []string, scadFiles []models.ScadFile, outp
 	return c.writer.WriteBambu(outputFile, combinedModel, tempFiles[0], scadFiles)
 }
 
+// CombineWithGroups combines multiple 3MF files into one, grouping parts by object name
+func (c *Combiner) CombineWithGroups(tempFiles []string, scadFiles []models.ScadFile, outputFile string) error {
+	var allMeshObjects []models.Object
+	nextID := 1
+
+	// Read all models and collect their mesh objects
+	for i, tempFile := range tempFiles {
+		model, err := c.reader.Read(tempFile)
+		if err != nil {
+			return fmt.Errorf("error reading 3MF file %d: %w", i, err)
+		}
+
+		// Collect mesh objects
+		for _, obj := range model.Resources.Objects {
+			obj.ID = strconv.Itoa(nextID)
+			obj.Name = scadFiles[i].Name
+			obj.UUID = "" // Will be set in components
+			allMeshObjects = append(allMeshObjects, obj)
+			nextID++
+		}
+	}
+
+	// Group mesh objects by their base object name (before the '/')
+	objectGroups := make(map[string][]int) // object name -> list of mesh object IDs
+	objectOrder := []string{}              // preserve order of objects
+
+	for i, scadFile := range scadFiles {
+		// Extract object name (part before '/')
+		objectName := scadFile.Name
+		for j := 0; j < len(objectName); j++ {
+			if objectName[j] == '/' {
+				objectName = objectName[:j]
+				break
+			}
+		}
+
+		// Track first occurrence for ordering
+		if _, exists := objectGroups[objectName]; !exists {
+			objectOrder = append(objectOrder, objectName)
+		}
+
+		// Map object name to mesh object ID (1-based)
+		objectGroups[objectName] = append(objectGroups[objectName], i+1)
+	}
+
+	// Create parent objects for each group
+	var parentObjects []models.Object
+	var buildItems []models.Item
+
+	for _, objectName := range objectOrder {
+		meshIDs := objectGroups[objectName]
+
+		// If only one part in this object, add it directly to build
+		if len(meshIDs) == 1 {
+			buildItems = append(buildItems, models.Item{
+				ObjectID:  strconv.Itoa(meshIDs[0]),
+				Transform: "1 0 0 0 1 0 0 0 1 0 0 0",
+				Printable: "1",
+			})
+		} else {
+			// Create a parent object with multiple components
+			var components []models.Component
+			for _, meshID := range meshIDs {
+				components = append(components, models.Component{
+					ObjectID:  strconv.Itoa(meshID),
+					Transform: "1 0 0 0 1 0 0 0 1 0 0 0",
+				})
+			}
+
+			parentID := strconv.Itoa(nextID)
+			nextID++
+
+			parentObject := models.Object{
+				ID:   parentID,
+				Name: objectName,
+				Type: "model",
+				Components: &models.Components{
+					Component: components,
+				},
+			}
+
+			parentObjects = append(parentObjects, parentObject)
+
+			buildItems = append(buildItems, models.Item{
+				ObjectID:  parentID,
+				Transform: "1 0 0 0 1 0 0 0 1 0 0 0",
+				Printable: "1",
+			})
+		}
+	}
+
+	// Combine all objects
+	allObjects := append(allMeshObjects, parentObjects...)
+
+	// Create the combined model
+	combinedModel := &models.Model{
+		Xmlns: "http://schemas.microsoft.com/3dmanufacturing/core/2015/02",
+		Unit:  "millimeter",
+		Lang:  "en-US",
+		Resources: models.Resources{
+			Objects: allObjects,
+		},
+		Build: models.Build{
+			Items: buildItems,
+		},
+	}
+
+	// Write combined model to output file with Bambu support
+	return c.writer.WriteBambu(outputFile, combinedModel, tempFiles[0], scadFiles)
+}
+
 func getMaxObjectID(model *models.Model) int {
 	maxID := 0
 	for _, obj := range model.Resources.Objects {

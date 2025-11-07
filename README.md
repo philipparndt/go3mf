@@ -10,6 +10,68 @@ brew install philipparndt/go3mf/go3mf
 
 ## Commands
 
+### combine-yaml
+
+Combine files based on a YAML configuration file. This is the recommended way to work with multiple objects and parts, as it provides better organization and reusability.
+
+```bash
+go3mf combine-yaml <config.yaml>
+```
+
+**YAML Configuration Format:**
+
+```yaml
+# Output file path (relative to config file or absolute)
+output: combined.3mf
+
+# Define objects - each object groups related parts
+objects:
+  # Single-part object
+  - name: Base
+    parts:
+      - name: platform
+        file: base.scad
+        filament: 1  # Optional: 1-4 for AMS slots, 0 or omit for auto
+
+  # Multi-part object
+  - name: Assembly
+    parts:
+      - name: main_body
+        file: body.scad
+        filament: 2
+      
+      - name: cover
+        file: cover.scad
+        filament: 3
+```
+
+**Configuration Fields:**
+- `output` - Output 3MF file path (required)
+- `objects` - Array of objects (required, at least one)
+  - `name` - Object name (required)
+  - `parts` - Array of parts in the object (required, at least one)
+    - `name` - Part name (required)
+    - `file` - Path to SCAD file, relative to config or absolute (required)
+    - `filament` - AMS filament slot: 0=auto, 1-4=specific slot (optional)
+
+**Benefits:**
+- Organize complex models with multiple objects and parts
+- Reusable configuration files for reproducible builds
+- Clear structure for multi-color prints with AMS
+- File paths relative to config file for portability
+- Version control friendly
+
+**Example:**
+```bash
+# Use the example configuration
+go3mf combine-yaml example/config.yaml
+
+# Create your own config and use it
+go3mf combine-yaml my-project/build-config.yaml
+```
+
+See `example/config.yaml` for a complete example.
+
 ### combine-scad
 
 Render OpenSCAD (.scad) files and combine them into a single 3MF file.

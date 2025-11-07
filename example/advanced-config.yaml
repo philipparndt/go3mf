@@ -1,0 +1,39 @@
+# Advanced example: Multi-part objects with specific filament assignments
+# This demonstrates organizing multiple parts into logical objects
+# and using different AMS filament slots for multi-color printing
+
+output: multi-part-assembly.3mf
+
+objects:
+  # A case assembly with multiple parts
+  - name: Case
+    parts:
+      - name: bottom
+        file: a.scad
+        filament: 1  # Black filament in AMS slot 1
+      
+      - name: top
+        file: b.scad
+        filament: 1  # Same filament as bottom
+
+  # Insert pieces using different colored filament
+  - name: Inserts
+    parts:
+      - name: insert_left
+        file: a.scad
+        filament: 2  # Red filament in AMS slot 2
+      
+      - name: insert_right
+        file: b.scad
+        filament: 2  # Same red filament
+
+  # Decorative elements with accent color
+  - name: Decorations
+    parts:
+      - name: badge
+        file: a.scad
+        filament: 3  # Gold filament in AMS slot 3
+      
+      - name: trim
+        file: b.scad
+        filament: 4  # White filament in AMS slot 4

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/alecthomas/kong"
+	"github.com/user/go3mf/internal/config"
 	"github.com/user/go3mf/internal/models"
 	"github.com/user/go3mf/internal/preconditions"
 	"github.com/user/go3mf/internal/renderer"
@@ -20,6 +21,7 @@ import (
 
 type CLI struct {
 	CombineScad *CombineScadCmd `cmd:"" help:"Render SCAD files and combine into single 3MF"`
+	CombineYaml *CombineYamlCmd `cmd:"" help:"Combine files based on YAML configuration"`
 	Combine3MF  *Combine3MFCmd  `cmd:"" help:"Combine multiple 3MF files into single model"`
 	CombineSTL  *CombineSTLCmd  `cmd:"" help:"Combine multiple STL files into single model"`
 	Version     *VersionCmd     `cmd:"" help:"Show version information"`
@@ -123,6 +125,100 @@ func (c *CombineScadCmd) Run() error {
 		names = append(names, scad.Name)
 	}
 	ui.PrintObjectList(names)
+	return nil
+}
+
+type CombineYamlCmd struct {
+	Config string `arg:"" help:"YAML configuration file path" required:""`
+}
+
+func (c *CombineYamlCmd) Run() error {
+	// Load and validate YAML configuration
+	ui.PrintHeader("Loading configuration...")
+	loader := config.NewLoader()
+	cfg, err := loader.Load(c.Config)
+	if err != nil {
+		ui.PrintError("Failed to load config: " + err.Error())
+		os.Exit(1)
+	}
+	ui.PrintSuccess(fmt.Sprintf("Loaded configuration with %d object(s)", len(cfg.Objects)))
+
+	// Display configuration summary
+	for _, obj := range cfg.Objects {
+		ui.PrintStep(fmt.Sprintf("Object '%s' with %d part(s)", obj.Name, len(obj.Parts)))
+		for _, part := range obj.Parts {
+			filamentInfo := ""
+			if part.Filament > 0 {
+				filamentInfo = fmt.Sprintf(" [filament %d]", part.Filament)
+			}
+			ui.PrintStep(fmt.Sprintf("  - %s: %s%s", part.Name, filepath.Base(part.File), filamentInfo))
+		}
+	}
+
+	// Check preconditions
+	ui.PrintHeader("Checking preconditions...")
+	if err := preconditions.Check(); err != nil {
+		ui.PrintError("OpenSCAD not found: " + err.Error())
+		os.Exit(1)
+	}
+	ui.PrintSuccess("OpenSCAD is installed")
+
+	// Convert YAML config to ScadFile list for rendering
+	scadFiles := loader.ConvertToScadFiles(cfg)
+
+	// Validate all files exist
+	ui.PrintStep("Validating files...")
+	var allPaths []string
+	for _, scad := range scadFiles {
+		allPaths = append(allPaths, scad.Path)
+	}
+	if err := preconditions.ValidateFiles(allPaths); err != nil {
+		ui.PrintError(err.Error())
+		os.Exit(1)
+	}
+
+	// Render SCAD files
+	ui.PrintHeader("Rendering SCAD files...")
+	baseDir := filepath.Dir(scadFiles[0].Path)
+	var scadPaths []string
+	for _, scad := range scadFiles {
+		scadPaths = append(scadPaths, scad.Path)
+	}
+
+	tempFiles, err := renderer.RenderMultipleSCAD(baseDir, scadPaths)
+	if err != nil {
+		ui.PrintError(err.Error())
+		os.Exit(1)
+	}
+	defer renderer.CleanupTempFiles(tempFiles)
+
+	for _, scad := range scadFiles {
+		ui.PrintStep("Rendered " + filepath.Base(scad.Path) + " → " + scad.Name)
+	}
+
+	// Combine 3MF files
+	ui.PrintHeader("Combining 3MF files...")
+	combiner := threemf.NewCombiner()
+	if err := combiner.CombineWithGroups(tempFiles, scadFiles, cfg.Output); err != nil {
+		ui.PrintError(err.Error())
+		os.Exit(1)
+	}
+
+	// Print success
+	ui.PrintSuccess("Combined 3MF file created: " + cfg.Output)
+
+	// Show objects grouped structure
+	ui.PrintStep("Objects in model:")
+	for _, obj := range cfg.Objects {
+		if len(obj.Parts) == 1 {
+			ui.PrintStep(fmt.Sprintf("  • %s (1 part)", obj.Name))
+		} else {
+			ui.PrintStep(fmt.Sprintf("  • %s (%d parts)", obj.Name, len(obj.Parts)))
+			for _, part := range obj.Parts {
+				ui.PrintStep(fmt.Sprintf("    - %s", part.Name))
+			}
+		}
+	}
 	return nil
 }
 

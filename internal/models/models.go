@@ -38,14 +38,14 @@ type Base struct {
 }
 
 type Object struct {
-	ID         string       `xml:"id,attr"`
-	Name       string       `xml:"name,attr"`
-	Type       string       `xml:"type,attr"`
-	UUID       string       `xml:"p:UUID,attr,omitempty"`
-	PID        string       `xml:"pid,attr"`
-	PIndex     string       `xml:"pindex,attr"`
-	Mesh       *Mesh        `xml:"mesh"`
-	Components *Components  `xml:"components"`
+	ID         string      `xml:"id,attr"`
+	Name       string      `xml:"name,attr"`
+	Type       string      `xml:"type,attr"`
+	UUID       string      `xml:"p:UUID,attr,omitempty"`
+	PID        string      `xml:"pid,attr"`
+	PIndex     string      `xml:"pindex,attr"`
+	Mesh       *Mesh       `xml:"mesh"`
+	Components *Components `xml:"components"`
 }
 
 type Components struct {
@@ -94,10 +94,10 @@ type ScadFile struct {
 
 // ModelSettings represents the Bambu Studio model_settings.config structure
 type ModelSettings struct {
-	XMLName xml.Name       `xml:"config"`
-	Object  SettingsObject `xml:"object"`
-	Plate   Plate          `xml:"plate"`
-	Assemble Assemble      `xml:"assemble"`
+	XMLName  xml.Name       `xml:"config"`
+	Object   SettingsObject `xml:"object"`
+	Plate    Plate          `xml:"plate"`
+	Assemble Assemble       `xml:"assemble"`
 }
 
 type SettingsObject struct {
@@ -107,9 +107,9 @@ type SettingsObject struct {
 }
 
 type SettingsMetadata struct {
-	Key   string `xml:"key,attr"`
-	Value string `xml:"value,attr,omitempty"`
-	FaceCount int `xml:"face_count,attr,omitempty"`
+	Key       string `xml:"key,attr"`
+	Value     string `xml:"value,attr,omitempty"`
+	FaceCount int    `xml:"face_count,attr,omitempty"`
 }
 
 type Part struct {
@@ -120,12 +120,12 @@ type Part struct {
 }
 
 type MeshStat struct {
-	FaceCount int `xml:"face_count,attr"`
-	EdgesFixed int `xml:"edges_fixed,attr"`
+	FaceCount        int `xml:"face_count,attr"`
+	EdgesFixed       int `xml:"edges_fixed,attr"`
 	DegenerateFacets int `xml:"degenerate_facets,attr"`
-	FacetsRemoved int `xml:"facets_removed,attr"`
-	FacetsReversed int `xml:"facets_reversed,attr"`
-	BackwardsEdges int `xml:"backwards_edges,attr"`
+	FacetsRemoved    int `xml:"facets_removed,attr"`
+	FacetsReversed   int `xml:"facets_reversed,attr"`
+	BackwardsEdges   int `xml:"backwards_edges,attr"`
 }
 
 type Plate struct {

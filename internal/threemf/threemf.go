@@ -60,7 +60,7 @@ type Writer struct{}
 func (w *Writer) WriteBambu(outputFile string, model *models.Model, sourceFile string, scadFiles []models.ScadFile) error {
 	// Add Bambu metadata
 	AddBambuMetadata(model)
-	
+
 	// Read source ZIP to get metadata files
 	sourceZip, err := zip.OpenReader(sourceFile)
 	if err != nil {
@@ -215,7 +215,7 @@ func NewCombiner() *Combiner {
 // Combine combines multiple 3MF files into one
 func (c *Combiner) Combine(tempFiles []string, scadFiles []models.ScadFile, outputFile string) error {
 	var allObjects []models.Object
-	
+
 	// Read all models and collect their objects
 	for i, tempFile := range tempFiles {
 		model, err := c.reader.Read(tempFile)

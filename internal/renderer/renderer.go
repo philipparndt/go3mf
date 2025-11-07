@@ -14,7 +14,7 @@ func RenderSCAD(workDir, scadFile, outputFile string) error {
 	if !filepath.IsAbs(scadFile) {
 		absScadFile = filepath.Join(workDir, scadFile)
 	}
-	
+
 	cmd := exec.Command("openscad", "-o", outputFile, absScadFile)
 	cmd.Dir = workDir
 	cmd.Stdout = os.Stdout

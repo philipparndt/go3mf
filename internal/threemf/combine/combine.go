@@ -29,7 +29,7 @@ func (c *Combiner) Combine(inputFiles []string, outputFile string) error {
 
 	var allObjects []models.Object
 	var scadFiles []models.ScadFile
-	
+
 	// Read all models and collect their objects
 	for i, inputFile := range inputFiles {
 		model, _, err := c.readModel(inputFile)
@@ -39,7 +39,7 @@ func (c *Combiner) Combine(inputFiles []string, outputFile string) error {
 
 		// Get name from filename
 		name := filepath.Base(inputFile[:len(inputFile)-len(filepath.Ext(inputFile))])
-		
+
 		// Collect mesh objects
 		for _, obj := range model.Resources.Objects {
 			obj.ID = strconv.Itoa(i + 1)
@@ -47,7 +47,7 @@ func (c *Combiner) Combine(inputFiles []string, outputFile string) error {
 			obj.UUID = "" // Will be set in components
 			allObjects = append(allObjects, obj)
 		}
-		
+
 		// Create ScadFile entry for settings (auto-assign filament)
 		scadFiles = append(scadFiles, models.ScadFile{
 			Path:         inputFile,
@@ -140,7 +140,7 @@ func (c *Combiner) readModel(filename string) (*models.Model, string, error) {
 func (c *Combiner) writeModelBambu(outputFile string, model *models.Model, sourceFile string, scadFiles []models.ScadFile) error {
 	// Add Bambu metadata
 	addBambuMetadata(model)
-	
+
 	// Read source ZIP to get metadata
 	sourceZip, err := zip.OpenReader(sourceFile)
 	if err != nil {
@@ -290,7 +290,7 @@ func addBambuMetadata(model *models.Model) {
 	model.XmlnsBambuStudio = "http://schemas.bambulab.com/package/2021"
 	model.XmlnsP = "http://schemas.microsoft.com/3dmanufacturing/production/2015/06"
 	model.RequiredExtensions = "p"
-	
+
 	// Add Bambu-specific metadata
 	model.Metadata = append([]models.Metadata{
 		{Name: "Application", Value: "go3mf"},
@@ -305,7 +305,7 @@ func writeModelSettings(outZip *zip.Writer, scadFiles []models.ScadFile) error {
 	// Create parts with filament assignments
 	var parts []models.Part
 	totalFaces := 0
-	
+
 	for i, scadFile := range scadFiles {
 		filamentSlot := scadFile.FilamentSlot
 		if filamentSlot == 0 {
@@ -314,7 +314,7 @@ func writeModelSettings(outZip *zip.Writer, scadFiles []models.ScadFile) error {
 
 		faceCount := 12 // Placeholder - would need actual mesh analysis
 		totalFaces += faceCount
-		
+
 		parts = append(parts, models.Part{
 			ID:      strconv.Itoa(i + 1),
 			Subtype: "normal_part",
@@ -333,7 +333,7 @@ func writeModelSettings(outZip *zip.Writer, scadFiles []models.ScadFile) error {
 	}
 
 	parentID := strconv.Itoa(len(scadFiles) + 1)
-	
+
 	settings := models.ModelSettings{
 		Object: models.SettingsObject{
 			ID: parentID,
@@ -391,4 +391,3 @@ func writeModelSettings(outZip *zip.Writer, scadFiles []models.ScadFile) error {
 
 	return nil
 }
-

@@ -15,7 +15,7 @@ func WriteModelSettings(outZip *zip.Writer, scadFiles []models.ScadFile) error {
 	// Create parts with filament assignments
 	var parts []models.Part
 	totalFaces := 0
-	
+
 	for i, scadFile := range scadFiles {
 		filamentSlot := scadFile.FilamentSlot
 		if filamentSlot == 0 {
@@ -24,7 +24,7 @@ func WriteModelSettings(outZip *zip.Writer, scadFiles []models.ScadFile) error {
 
 		faceCount := 12 // Placeholder - would need actual mesh analysis
 		totalFaces += faceCount
-		
+
 		parts = append(parts, models.Part{
 			ID:      strconv.Itoa(i + 1),
 			Subtype: "normal_part",
@@ -43,7 +43,7 @@ func WriteModelSettings(outZip *zip.Writer, scadFiles []models.ScadFile) error {
 	}
 
 	parentID := strconv.Itoa(len(scadFiles) + 1)
-	
+
 	settings := models.ModelSettings{
 		Object: models.SettingsObject{
 			ID: parentID,
@@ -107,7 +107,7 @@ func AddBambuMetadata(model *models.Model) {
 	model.XmlnsBambuStudio = "http://schemas.bambulab.com/package/2021"
 	model.XmlnsP = "http://schemas.microsoft.com/3dmanufacturing/production/2015/06"
 	model.RequiredExtensions = "p"
-	
+
 	// Add Bambu-specific metadata
 	model.Metadata = append([]models.Metadata{
 		{Name: "Application", Value: "go3mf"},

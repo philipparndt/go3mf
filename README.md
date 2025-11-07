@@ -228,12 +228,12 @@ Inspecting: combined_from_yaml.3mf
   •   - ModificationDate: 2025-11-07
 Build Plate Items:
   • 1. Object ID 1: Base (printable: yes)
-  • 2. Object ID 4: Assembly (printable: yes)
+  • 2. Object ID 4: Assembly (printable: yes) [offset: 90.00, 0.00, 0.00]
 Objects in Model:
-  • • Base (ID: 1) (color: 1) [has mesh]
-  • • Assembly (ID: 4) - 2 part(s) (color: 1)
-  •   - Assembly/main_body (ID: 2) (color: 2)
-  •   - Assembly/cover (ID: 3) (color: 3)
+  • • Base (ID: 1) (filament: 1) [has mesh]
+  • • Assembly (ID: 4) - 2 part(s) (filament: 1)
+  •   - Assembly/main_body (ID: 2) (filament: 2)
+  •   - Assembly/cover (ID: 3) (filament: 3)
 ```
 
 This shows the same object/part structure that's displayed after a combine operation, making it easy to verify your 3MF files.

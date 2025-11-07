@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/user/go3mf/internal/config"
+	"github.com/user/go3mf/internal/inspect"
 	"github.com/user/go3mf/internal/models"
 	"github.com/user/go3mf/internal/preconditions"
 	"github.com/user/go3mf/internal/renderer"
@@ -510,27 +511,15 @@ func (s *CombineWithGroupsStep) Execute() error {
 	// Print success
 	ui.PrintSuccess("Combined 3MF file created: " + buildContext.OutputFile)
 
-	// Show objects grouped structure
-	ui.PrintStep("Objects in model:")
-	for _, obj := range buildContext.YAMLConfig.Objects {
-		if len(obj.Parts) == 1 {
-			part := obj.Parts[0]
-			colorInfo := ""
-			if part.Filament > 0 {
-				colorInfo = fmt.Sprintf(" (color: %d)", part.Filament)
-			}
-			ui.PrintStep(fmt.Sprintf("  • %s (1 part)%s", obj.Name, colorInfo))
-		} else {
-			ui.PrintStep(fmt.Sprintf("  • %s (%d parts)", obj.Name, len(obj.Parts)))
-			for _, part := range obj.Parts {
-				colorInfo := ""
-				if part.Filament > 0 {
-					colorInfo = fmt.Sprintf(" (color: %d)", part.Filament)
-				}
-				ui.PrintStep(fmt.Sprintf("    - %s%s", part.Name, colorInfo))
-			}
-		}
+	// Show objects using the same printer as inspect
+	inspector := inspect.NewInspector()
+	model, settings, err := inspector.Read3MFFile(buildContext.OutputFile)
+	if err == nil {
+		ui.PrintHeader("Objects in Model:")
+		printer := inspect.NewModelPrinter()
+		printer.PrintObjectHierarchy(model, settings)
 	}
+
 	return nil
 }
 

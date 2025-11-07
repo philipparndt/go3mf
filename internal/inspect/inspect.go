@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/user/go3mf/internal/models"
 	"github.com/user/go3mf/internal/ui"
@@ -58,15 +57,32 @@ func (i *Inspector) Inspect(filename string) error {
 			if item.Printable == "0" {
 				printable = "no"
 			}
-			ui.PrintStep(fmt.Sprintf("%d. Object ID %s: %s (printable: %s)", idx+1, item.ObjectID, objectName, printable))
+			
+			// Get offset information from transform
+			offsetInfo := ""
+			if item.Transform != "" {
+				if x, y, z, ok := ParseTransformOffset(item.Transform); ok {
+					if x != 0 || y != 0 || z != 0 {
+						offsetInfo = fmt.Sprintf(" [offset: %.2f, %.2f, %.2f]", x, y, z)
+					}
+				}
+			}
+			
+			ui.PrintStep(fmt.Sprintf("%d. Object ID %s: %s (printable: %s)%s", idx+1, item.ObjectID, objectName, printable, offsetInfo))
 		}
 	}
 
 	// Print object hierarchy
 	ui.PrintHeader("Objects in Model:")
-	i.printObjectHierarchy(model, settings)
+	printer := NewModelPrinter()
+	printer.PrintObjectHierarchy(model, settings)
 
 	return nil
+}
+
+// Read3MFFile reads a 3MF file and returns the model and settings (exported for use by other packages)
+func (i *Inspector) Read3MFFile(filename string) (*models.Model, *models.ModelSettings, error) {
+	return i.read3MFFile(filename)
 }
 
 // read3MFFile reads a 3MF file and returns the model and settings
@@ -161,122 +177,4 @@ func (i *Inspector) getObjectName(model *models.Model, objectID string) string {
 		}
 	}
 	return "(not found)"
-}
-
-// printObjectHierarchy prints the object hierarchy with components and colors
-func (i *Inspector) printObjectHierarchy(model *models.Model, settings *models.ModelSettings) {
-	// Create a map of object IDs to settings info
-	settingsMap := make(map[string]*models.SettingsObject)
-	partsMap := make(map[string]*models.Part)
-	
-	if settings != nil {
-		for idx := range settings.Objects {
-			obj := &settings.Objects[idx]
-			settingsMap[obj.ID] = obj
-			for pidx := range obj.Parts {
-				part := &obj.Parts[pidx]
-				partsMap[part.ID] = part
-			}
-		}
-	}
-
-	// Track which objects are components (not top-level)
-	componentIDs := make(map[string]bool)
-	for _, obj := range model.Resources.Objects {
-		if obj.Components != nil {
-			for _, comp := range obj.Components.Component {
-				componentIDs[comp.ObjectID] = true
-			}
-		}
-	}
-
-	// Print top-level objects (those that have components or are in build items)
-	objectCount := 0
-	for _, obj := range model.Resources.Objects {
-		// Skip objects that are only used as components
-		if obj.Components == nil && componentIDs[obj.ID] {
-			continue
-		}
-
-		objectCount++
-		i.printObject(model, &obj, settingsMap, partsMap, 0)
-	}
-
-	if objectCount == 0 {
-		ui.PrintStep("No objects found")
-	}
-}
-
-// printObject recursively prints an object and its components
-func (i *Inspector) printObject(model *models.Model, obj *models.Object, settingsMap map[string]*models.SettingsObject, partsMap map[string]*models.Part, depth int) {
-	indent := strings.Repeat("  ", depth)
-	
-	name := obj.Name
-	if name == "" {
-		name = "(unnamed)"
-	}
-
-	// Get color/filament information
-	colorInfo := ""
-	if settings, ok := settingsMap[obj.ID]; ok {
-		for _, meta := range settings.Metadata {
-			if meta.Key == "extruder" && meta.Value != "" {
-				colorInfo = fmt.Sprintf(" (color: %s)", meta.Value)
-				break
-			}
-		}
-	}
-
-	// Check if this object has a mesh (actual geometry)
-	hasMesh := obj.Mesh != nil
-	meshInfo := ""
-	if hasMesh {
-		meshInfo = " [has mesh]"
-	}
-
-	// Print the object
-	if obj.Components != nil && len(obj.Components.Component) > 0 {
-		// Parent object with components
-		ui.PrintStep(fmt.Sprintf("%s• %s (ID: %s) - %d part(s)%s%s", indent, name, obj.ID, len(obj.Components.Component), colorInfo, meshInfo))
-		
-		// Print each component
-		for _, comp := range obj.Components.Component {
-			// Find the component object
-			for _, compObj := range model.Resources.Objects {
-				if compObj.ID == comp.ObjectID {
-					i.printComponent(&compObj, comp, partsMap, depth+1)
-					break
-				}
-			}
-		}
-	} else {
-		// Leaf object (just a mesh)
-		ui.PrintStep(fmt.Sprintf("%s• %s (ID: %s)%s%s", indent, name, obj.ID, colorInfo, meshInfo))
-	}
-}
-
-// printComponent prints a component with its color information
-func (i *Inspector) printComponent(obj *models.Object, comp models.Component, partsMap map[string]*models.Part, depth int) {
-	indent := strings.Repeat("  ", depth)
-	
-	name := obj.Name
-	if name == "" {
-		name = "(unnamed)"
-	}
-
-	// Get color/filament information from part settings
-	colorInfo := ""
-	if part, ok := partsMap[obj.ID]; ok {
-		for _, meta := range part.Metadata {
-			if meta.Key == "extruder" && meta.Value != "" {
-				colorInfo = fmt.Sprintf(" (color: %s)", meta.Value)
-				break
-			}
-			if meta.Key == "name" && meta.Value != "" {
-				name = meta.Value
-			}
-		}
-	}
-
-	ui.PrintStep(fmt.Sprintf("%s- %s (ID: %s)%s", indent, name, obj.ID, colorInfo))
 }

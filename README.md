@@ -1,6 +1,6 @@
 # go3mf
 
-A command-line tool for working with 3D model files. It can render OpenSCAD files and combine multiple 3D model files (3MF, STL, SCAD) into a single output file.
+A command-line tool for working with 3D model files. It can render OpenSCAD files and combine multiple 3D model files (3MF, STL, SCAD) into a single 3MF output file.
 
 ## Install
 
@@ -10,12 +10,30 @@ brew install philipparndt/go3mf/go3mf
 
 ## Commands
 
-### combine-yaml
+### combine
 
-Combine files based on a YAML configuration file. This is the recommended way to work with multiple objects and parts, as it provides better organization and reusability.
+Combine files into a single 3MF file. This command intelligently handles different file types:
+- **YAML config files** - Use structured configuration for complex multi-object models
+- **SCAD files** - Render OpenSCAD files and combine them
+- **3MF files** - Merge existing 3MF models
+- **STL files** - Convert STL meshes (ASCII and binary) to 3MF and combine them
 
 ```bash
-go3mf combine-yaml <config.yaml>
+go3mf combine [OPTIONS] <files...>
+```
+
+**Options:**
+- `-o, --output` - Output file path (default: "combined.3mf")
+- `--object` - Define an object group for SCAD files (can be repeated)
+
+---
+
+#### Using YAML Configuration (Recommended for Complex Models)
+
+For complex models with multiple objects and parts, use a YAML configuration file. This is the recommended way as it provides better organization and reusability.
+
+```bash
+go3mf combine example/config.yaml
 ```
 
 **YAML Configuration Format:**
@@ -72,82 +90,155 @@ go3mf combine-yaml my-project/build-config.yaml
 
 See `example/config.yaml` for a complete example.
 
-### combine-scad
+---
+
+#### Combining SCAD Files
 
 Render OpenSCAD (.scad) files and combine them into a single 3MF file.
 
+**Simple Mode - Flat List:**
+
+Combine SCAD files as parts in a single object:
+
 ```bash
-go3mf combine-scad [OPTIONS] <file1.scad> [file2.scad:name:filament] ...
+go3mf combine file1.scad file2.scad file3.scad -o output.3mf
 ```
 
-**Options:**
-- `-o, --output` - Output 3MF file path (default: "combined.3mf")
+This creates a single object named "Combined" with multiple parts.
 
-**File Format:**
-- `file.scad` - Use filename as object name, auto-assign filament
-- `file.scad:name` - Custom object name, auto-assign filament
+**File argument formats:**
+- `file.scad` - Use filename as part name, auto-assign filament
+- `file.scad:name` - Custom part name, auto-assign filament  
 - `file.scad:name:2` - Custom name with specific filament slot (1-4)
+
+Examples:
+```bash
+# Basic combination with auto-assigned filaments
+go3mf combine button.scad holder.scad base.scad -o parts.3mf
+
+# Specify custom names
+go3mf combine button.scad:btn holder.scad:holder -o output.3mf
+
+# Manually assign specific filament slots (AMS slots 1-4)
+go3mf combine button.scad:button:1 holder.scad:holder:2 base.scad:base:3
+```
+
+**Advanced Mode - Object Grouping (Recommended):**
+
+Use the `--object` flag with `-n` (name) and `-c` (color/filament) for better organization and tab completion:
+
+```bash
+go3mf combine -o output.3mf \
+  --object -n "ObjectName" -c 1 file1.scad -c 2 file2.scad \
+  --object -n "NextObject" -c 3 file3.scad
+```
+
+- `--object` - Start a new object group
+- `-n "Name"` - Set the object name (required after --object)
+- `-c N` - Set filament slot (1-4) for the next file (optional)
+- Files support tab completion!
+
+Examples:
+```bash
+# Group files into objects with specific filaments
+go3mf combine -o assembly.3mf \
+  --object -n "Case" -c 1 bottom.scad -c 1 top.scad \
+  --object -n "Inserts" -c 2 insert1.scad -c 2 insert2.scad
+
+# Mix with auto-filament (omit -c flag)
+go3mf combine -o model.3mf \
+  --object -n "Body" body.scad cover.scad \
+  --object -n "Accessories" -c 4 button.scad
+
+# Use relative or absolute paths with tab completion
+go3mf combine -o project.3mf \
+  --object -n "Main" -c 1 ./parts/base.scad ./parts/frame.scad \
+  --object -n "Details" -c 3 ./details/badge.scad
+```
 
 **Filament Assignment:**
 When combining multiple objects, go3mf automatically assigns different filament slots for Bambu Studio:
-- If no filament slot is specified, objects are automatically assigned slots 1, 2, 3, 4 (cycling)
-- You can manually specify slots 1-4 to control which AMS filament each object uses
+- If no filament slot is specified (no `-c` flag), objects are automatically assigned slots 1, 2, 3, 4 (cycling)
+- You can manually specify slots 1-4 to control which AMS filament each part uses
 - This allows Bambu Studio to recognize different filaments per object without manual configuration
 
-**Examples:**
-```bash
-go run . -/example/a.scad /example/b.scad
-```
+---
+
+#### Combining 3MF Files
+
+Combine multiple existing 3MF files into a single 3MF model.
 
 ```bash
-# Combine multiple SCAD files with auto-assigned filaments (1, 2, 3)
-go3mf combine-scad button.scad holder.scad base.scad
-
-# Specify custom names for objects (filaments auto-assigned)
-go3mf combine-scad button.scad:button holder.scad:holder -o output.3mf
-
-# Manually assign specific filament slots
-go3mf combine-scad button.scad:button:1 holder.scad:holder:2 base.scad:base:3
-
-# Mix auto and manual assignment
-go3mf combine-scad button.scad:button:2 holder.scad:holder base.scad:base:4
+go3mf combine file1.3mf file2.3mf file3.3mf -o result.3mf
 ```
-
-### combine-3mf
-
-Combine multiple 3MF files into a single 3MF model.
-
-```bash
-go3mf combine-3mf [OPTIONS] <file1.3mf> <file2.3mf> ...
-```
-
-**Options:**
-- `-o, --output` - Output 3MF file path (default: "combined.3mf")
 
 **Filament Assignment:**
 Objects are automatically assigned different filament slots (1-4) for Bambu Studio, cycling through available AMS slots.
 
-**Example:**
-```bash
-# Combine 3MF files with automatic filament assignment
-go3mf combine-3mf model1.3mf model2.3mf model3.3mf -o result.3mf
-```
+---
 
-### combine-stl
+#### Combining STL Files
 
-Combine multiple STL files into a single STL model.
+Convert and combine multiple STL files into a single 3MF model. STL files (both ASCII and binary formats) are automatically converted to 3MF format and then combined.
 
 ```bash
-go3mf combine-stl [OPTIONS] <file1.stl> <file2.stl> ...
+go3mf combine file1.stl file2.stl file3.stl -o combined.3mf
 ```
 
-**Options:**
-- `-o, --output` - Output STL file path (default: "combined.stl")
+**Note:** The output file must have a `.3mf` extension as STL files are converted and embedded into the 3MF format.
 
-**Example:**
+---
+
+### inspect
+
+Inspect a 3MF file and display its contents, including objects, parts, colors, and metadata. This is useful for understanding the structure of 3MF files and verifying the output of combine operations.
+
 ```bash
-go3mf combine-stl part1.stl part2.stl part3.stl -o combined.stl
+go3mf inspect <file.3mf>
 ```
+
+**What it shows:**
+- Basic file information (unit, language)
+- Metadata (application, creation date, etc.)
+- Build plate items (what objects are printable)
+- Object hierarchy with components and parts
+- Color/filament assignments (when available)
+- Object and part names
+
+**Examples:**
+
+```bash
+# Inspect a combined 3MF file
+go3mf inspect combined.3mf
+
+# Inspect any 3MF file to see its structure
+go3mf inspect model.3mf
+```
+
+**Sample output:**
+
+```
+Inspecting: combined_from_yaml.3mf
+  • Unit: millimeter
+  • Language: 
+  • Metadata:
+  •   - Application: go3mf
+  •   - BambuStudio:3mfVersion: 1
+  •   - CreationDate: 2025-11-07
+  •   - ModificationDate: 2025-11-07
+Build Plate Items:
+  • 1. Object ID 1: Base (printable: yes)
+  • 2. Object ID 4: Assembly (printable: yes)
+Objects in Model:
+  • • Base (ID: 1) (color: 1) [has mesh]
+  • • Assembly (ID: 4) - 2 part(s) (color: 1)
+  •   - Assembly/main_body (ID: 2) (color: 2)
+  •   - Assembly/cover (ID: 3) (color: 3)
+```
+
+This shows the same object/part structure that's displayed after a combine operation, making it easy to verify your 3MF files.
+
+---
 
 ### version
 
@@ -156,4 +247,3 @@ Display version information.
 ```bash
 go3mf version
 ```
-

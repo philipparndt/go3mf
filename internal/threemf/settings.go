@@ -11,49 +11,75 @@ import (
 )
 
 // WriteModelSettings writes the Bambu Studio model_settings.config file
-func WriteModelSettings(outZip *zip.Writer, scadFiles []models.ScadFile) error {
-	// Create parts with filament assignments
-	var parts []models.Part
-	totalFaces := 0
+func WriteModelSettings(outZip *zip.Writer, objectGroups []models.ObjectGroup, buildItems []models.Item) error {
+	var settingsObjects []models.SettingsObject
+	var modelInstances []models.ModelInstance
+	var assembleItems []models.AssembleItem
+	partID := 1
 
-	for i, scadFile := range scadFiles {
-		filamentSlot := scadFile.FilamentSlot
-		if filamentSlot == 0 {
-			filamentSlot = ((i) % 4) + 1
+	// Create settings object for each group
+	for _, group := range objectGroups {
+		var parts []models.Part
+		totalFaces := 0
+
+		for _, scadFile := range group.Parts {
+			filamentSlot := scadFile.FilamentSlot
+			if filamentSlot == 0 {
+				filamentSlot = ((partID - 1) % 4) + 1
+			}
+
+			faceCount := 12 // Placeholder - would need actual mesh analysis
+			totalFaces += faceCount
+
+			parts = append(parts, models.Part{
+				ID:      strconv.Itoa(partID),
+				Subtype: "normal_part",
+				Metadata: []models.SettingsMetadata{
+					{Key: "name", Value: scadFile.Name},
+					{Key: "matrix", Value: "1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"},
+					{Key: "source_file", Value: "combined.3mf"},
+					{Key: "source_object_id", Value: strconv.Itoa(partID - 1)},
+					{Key: "source_volume_id", Value: "0"},
+					{Key: "extruder", Value: strconv.Itoa(filamentSlot)},
+				},
+				MeshStat: models.MeshStat{
+					FaceCount: faceCount,
+				},
+			})
+			partID++
 		}
 
-		faceCount := 12 // Placeholder - would need actual mesh analysis
-		totalFaces += faceCount
-
-		parts = append(parts, models.Part{
-			ID:      strconv.Itoa(i + 1),
-			Subtype: "normal_part",
+		settingsObjects = append(settingsObjects, models.SettingsObject{
+			ID: group.ID,
 			Metadata: []models.SettingsMetadata{
-				{Key: "name", Value: scadFile.Name},
-				{Key: "matrix", Value: "1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"},
-				{Key: "source_file", Value: "combined.3mf"},
-				{Key: "source_object_id", Value: strconv.Itoa(i)},
-				{Key: "source_volume_id", Value: "0"},
-				{Key: "extruder", Value: strconv.Itoa(filamentSlot)},
-			},
-			MeshStat: models.MeshStat{
-				FaceCount: faceCount,
-			},
-		})
-	}
-
-	parentID := strconv.Itoa(len(scadFiles) + 1)
-
-	settings := models.ModelSettings{
-		Object: models.SettingsObject{
-			ID: parentID,
-			Metadata: []models.SettingsMetadata{
-				{Key: "name", Value: "combined"},
+				{Key: "name", Value: group.Name},
 				{Key: "extruder", Value: "1"},
 				{FaceCount: totalFaces},
 			},
 			Parts: parts,
-		},
+		})
+
+		modelInstances = append(modelInstances, models.ModelInstance{
+			Metadata: []models.SettingsMetadata{
+				{Key: "object_id", Value: group.ID},
+				{Key: "instance_id", Value: "0"},
+				{Key: "identify_id", Value: group.ID},
+			},
+		})
+	}
+
+	// Create assemble items from build items
+	for _, item := range buildItems {
+		assembleItems = append(assembleItems, models.AssembleItem{
+			ObjectID:   item.ObjectID,
+			InstanceID: "0",
+			Transform:  item.Transform,
+			Offset:     "0 0 0",
+		})
+	}
+
+	settings := models.ModelSettings{
+		Objects: settingsObjects,
 		Plate: models.Plate{
 			Metadata: []models.SettingsMetadata{
 				{Key: "plater_id", Value: "1"},
@@ -61,23 +87,10 @@ func WriteModelSettings(outZip *zip.Writer, scadFiles []models.ScadFile) error {
 				{Key: "locked", Value: "false"},
 				{Key: "filament_map_mode", Value: "Auto For Flush"},
 			},
-			ModelInstance: models.ModelInstance{
-				Metadata: []models.SettingsMetadata{
-					{Key: "object_id", Value: parentID},
-					{Key: "instance_id", Value: "0"},
-					{Key: "identify_id", Value: "1"},
-				},
-			},
+			ModelInstances: modelInstances,
 		},
 		Assemble: models.Assemble{
-			Items: []models.AssembleItem{
-				{
-					ObjectID:   parentID,
-					InstanceID: "0",
-					Transform:  "1 0 0 0 1 0 0 0 1 0 0 0",
-					Offset:     "0 0 0",
-				},
-			},
+			Items: assembleItems,
 		},
 	}
 

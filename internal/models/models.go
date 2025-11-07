@@ -92,6 +92,13 @@ type ScadFile struct {
 	FilamentSlot int // 1-4 for AMS slots, 0 for auto-assign
 }
 
+// ObjectGroup represents a group of parts that form a single object
+type ObjectGroup struct {
+	ID    string     // Object ID in the 3MF model
+	Name  string     // Object name
+	Parts []ScadFile // Parts in this object
+}
+
 // YamlConfig represents the complete YAML configuration file
 type YamlConfig struct {
 	Output  string       `yaml:"output"`
@@ -113,10 +120,10 @@ type YamlPart struct {
 
 // ModelSettings represents the Bambu Studio model_settings.config structure
 type ModelSettings struct {
-	XMLName  xml.Name       `xml:"config"`
-	Object   SettingsObject `xml:"object"`
-	Plate    Plate          `xml:"plate"`
-	Assemble Assemble       `xml:"assemble"`
+	XMLName  xml.Name         `xml:"config"`
+	Objects  []SettingsObject `xml:"object"`
+	Plate    Plate            `xml:"plate"`
+	Assemble Assemble         `xml:"assemble"`
 }
 
 type SettingsObject struct {
@@ -148,8 +155,8 @@ type MeshStat struct {
 }
 
 type Plate struct {
-	Metadata      []SettingsMetadata `xml:"metadata"`
-	ModelInstance ModelInstance      `xml:"model_instance"`
+	Metadata       []SettingsMetadata `xml:"metadata"`
+	ModelInstances []ModelInstance    `xml:"model_instance"`
 }
 
 type ModelInstance struct {

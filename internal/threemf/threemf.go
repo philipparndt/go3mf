@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/user/go3mf/internal/geometry"
 	"github.com/user/go3mf/internal/models"
 )
 
@@ -57,7 +58,7 @@ func (r *Reader) Read(filename string) (*models.Model, error) {
 type Writer struct{}
 
 // WriteBambu writes a model to a 3MF file with Bambu Studio support
-func (w *Writer) WriteBambu(outputFile string, model *models.Model, sourceFile string, scadFiles []models.ScadFile) error {
+func (w *Writer) WriteBambu(outputFile string, model *models.Model, sourceFile string, objectGroups []models.ObjectGroup, buildItems []models.Item) error {
 	// Add Bambu metadata
 	AddBambuMetadata(model)
 
@@ -99,7 +100,7 @@ func (w *Writer) WriteBambu(outputFile string, model *models.Model, sourceFile s
 	}
 
 	// Write Bambu model settings
-	if err := WriteModelSettings(outZip, scadFiles); err != nil {
+	if err := WriteModelSettings(outZip, objectGroups, buildItems); err != nil {
 		return fmt.Errorf("error writing model settings: %w", err)
 	}
 
@@ -233,12 +234,27 @@ func (c *Combiner) Combine(tempFiles []string, scadFiles []models.ScadFile, outp
 	}
 
 	// Create a parent object with components
+	// Arrange objects side by side with spacing to avoid overlap
+	const margin = 10.0 // mm margin between objects
 	var components []models.Component
+	currentXOffset := 0.0
+
 	for i := range allObjects {
+		// Position objects along the X axis with spacing
+		transform := fmt.Sprintf("1 0 0 0 1 0 0 0 1 %.2f 0 0", currentXOffset)
+
 		components = append(components, models.Component{
 			ObjectID:  strconv.Itoa(i + 1),
-			Transform: "1 0 0 0 1 0 0 0 1 0 0 0",
+			Transform: transform,
 		})
+
+		// Calculate width of this object for next position
+		bbox, err := geometry.CalculateBoundingBox(&allObjects[i])
+		if err == nil {
+			currentXOffset += bbox.Width() + margin
+		} else {
+			currentXOffset += 50.0 // fallback spacing
+		}
 	}
 
 	parentID := strconv.Itoa(len(allObjects) + 1)
@@ -247,6 +263,14 @@ func (c *Combiner) Combine(tempFiles []string, scadFiles []models.ScadFile, outp
 		Type: "model",
 		Components: &models.Components{
 			Component: components,
+		},
+	}
+
+	buildItems := []models.Item{
+		{
+			ObjectID:  parentID,
+			Transform: "1 0 0 0 1 0 0 0 1 0 0 0",
+			Printable: "1",
 		},
 	}
 
@@ -259,18 +283,21 @@ func (c *Combiner) Combine(tempFiles []string, scadFiles []models.ScadFile, outp
 			Objects: append(allObjects, parentObject),
 		},
 		Build: models.Build{
-			Items: []models.Item{
-				{
-					ObjectID:  parentID,
-					Transform: "1 0 0 0 1 0 0 0 1 0 0 0",
-					Printable: "1",
-				},
-			},
+			Items: buildItems,
+		},
+	}
+
+	// Create single object group for settings
+	objectGroups := []models.ObjectGroup{
+		{
+			ID:    parentID,
+			Name:  "combined",
+			Parts: scadFiles,
 		},
 	}
 
 	// Write combined model to output file with Bambu support
-	return c.writer.WriteBambu(outputFile, combinedModel, tempFiles[0], scadFiles)
+	return c.writer.WriteBambu(outputFile, combinedModel, tempFiles[0], objectGroups, buildItems)
 }
 
 // CombineWithGroups combines multiple 3MF files into one, grouping parts by object name
@@ -321,24 +348,111 @@ func (c *Combiner) CombineWithGroups(tempFiles []string, scadFiles []models.Scad
 	// Create parent objects for each group
 	var parentObjects []models.Object
 	var buildItems []models.Item
+	var settingsGroups []models.ObjectGroup
 
+	// Prepare objects for bin packing
+	const margin = 10.0 // mm margin between objects
+	var packingObjects []geometry.Rectangle
+	objectInfoMap := make(map[int]struct {
+		meshIDs      []int
+		objectName   string
+		groupObjects []models.Object
+		scadFiles    []models.ScadFile
+	})
+
+	packingID := 0
 	for _, objectName := range objectOrder {
 		meshIDs := objectGroups[objectName]
 
+		// Calculate bounding box for this group of objects
+		var groupObjects []models.Object
+		var groupScadFiles []models.ScadFile
+		for _, meshID := range meshIDs {
+			groupObjects = append(groupObjects, allMeshObjects[meshID-1])
+			groupScadFiles = append(groupScadFiles, scadFiles[meshID-1])
+		}
+
+		// Calculate dimensions for packing
+		var width, height float64
+		if len(meshIDs) == 1 {
+			bbox, err := geometry.CalculateBoundingBox(&groupObjects[0])
+			if err == nil {
+				width = bbox.Width()
+				height = bbox.Height()
+			} else {
+				width, height = 50.0, 50.0 // fallback
+			}
+		} else {
+			// For multi-part objects, calculate combined bounding box
+			transforms := make([]string, len(groupObjects))
+			for i := range transforms {
+				transforms[i] = "1 0 0 0 1 0 0 0 1 0 0 0" // All at origin
+			}
+			groupBBox, err := geometry.CalculateCombinedBoundingBox(groupObjects, transforms)
+			if err == nil {
+				width = groupBBox.Width()
+				height = groupBBox.Height()
+			} else {
+				width, height = 100.0, 100.0 // fallback
+			}
+		}
+
+		packingObjects = append(packingObjects, geometry.Rectangle{
+			Width:  width,
+			Height: height,
+			ID:     packingID,
+		})
+
+		objectInfoMap[packingID] = struct {
+			meshIDs      []int
+			objectName   string
+			groupObjects []models.Object
+			scadFiles    []models.ScadFile
+		}{meshIDs, objectName, groupObjects, groupScadFiles}
+
+		packingID++
+	}
+
+	// Use bin packing algorithm to arrange objects
+	packer := geometry.NewPacker(margin)
+	packingResults := packer.PackOptimal(packingObjects, 256.0) // 256mm typical build plate width
+
+	// Create objects and build items based on packing results
+	for _, result := range packingResults {
+		info := objectInfoMap[result.ID]
+		meshIDs := info.meshIDs
+		objectName := info.objectName
+		groupScadFiles := info.scadFiles
+
+		buildTransform := fmt.Sprintf("1 0 0 0 1 0 0 0 1 %.2f %.2f 0", result.X, result.Y)
+
 		// If only one part in this object, add it directly to build
 		if len(meshIDs) == 1 {
+			objectID := strconv.Itoa(meshIDs[0])
 			buildItems = append(buildItems, models.Item{
-				ObjectID:  strconv.Itoa(meshIDs[0]),
-				Transform: "1 0 0 0 1 0 0 0 1 0 0 0",
+				ObjectID:  objectID,
+				Transform: buildTransform,
 				Printable: "1",
+			})
+
+			// Add to settings groups
+			settingsGroups = append(settingsGroups, models.ObjectGroup{
+				ID:    objectID,
+				Name:  objectName,
+				Parts: groupScadFiles,
 			})
 		} else {
 			// Create a parent object with multiple components
+			// Parts within an object should be at the same position (no spacing)
 			var components []models.Component
+
 			for _, meshID := range meshIDs {
+				// All parts at the same position - they will be combined
+				transform := "1 0 0 0 1 0 0 0 1 0 0 0"
+
 				components = append(components, models.Component{
 					ObjectID:  strconv.Itoa(meshID),
-					Transform: "1 0 0 0 1 0 0 0 1 0 0 0",
+					Transform: transform,
 				})
 			}
 
@@ -358,8 +472,15 @@ func (c *Combiner) CombineWithGroups(tempFiles []string, scadFiles []models.Scad
 
 			buildItems = append(buildItems, models.Item{
 				ObjectID:  parentID,
-				Transform: "1 0 0 0 1 0 0 0 1 0 0 0",
+				Transform: buildTransform,
 				Printable: "1",
+			})
+
+			// Add to settings groups
+			settingsGroups = append(settingsGroups, models.ObjectGroup{
+				ID:    parentID,
+				Name:  objectName,
+				Parts: groupScadFiles,
 			})
 		}
 	}
@@ -381,7 +502,7 @@ func (c *Combiner) CombineWithGroups(tempFiles []string, scadFiles []models.Scad
 	}
 
 	// Write combined model to output file with Bambu support
-	return c.writer.WriteBambu(outputFile, combinedModel, tempFiles[0], scadFiles)
+	return c.writer.WriteBambu(outputFile, combinedModel, tempFiles[0], settingsGroups, buildItems)
 }
 
 func getMaxObjectID(model *models.Model) int {

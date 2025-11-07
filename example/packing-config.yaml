@@ -1,0 +1,53 @@
+# Example YAML configuration for go3mf
+# This file demonstrates how to define multiple objects with multiple parts
+
+# Output file path (relative to this config file or absolute)
+output: combined_from_yaml.3mf
+
+# Define objects - each object groups related parts
+objects:
+  - name: o1
+    parts:
+      - name: main_body
+        file: b.scad
+        filament: 1  # Use AMS slot 1
+      
+      - name: cover
+        file: a.scad
+        filament: 2  # Use AMS slot 32
+  - name: o2
+    parts:
+      - name: main_body
+        file: b.scad
+        filament: 1  # Use AMS slot 1
+      
+      - name: cover
+        file: a.scad
+        filament: 2  # Use AMS slot 2
+  - name: o3
+    parts:
+      - name: main_body
+        file: b.scad
+        filament: 1  # Use AMS slot 1
+      
+      - name: cover
+        file: a.scad
+        filament: 2  # Use AMS slot 2
+  - name: o4
+    parts:
+      - name: main_body
+        file: b.scad
+        filament: 1  # Use AMS slot 1
+      
+      - name: cover
+        file: a.scad
+        filament: 2  # Use AMS slot 2
+  - name: o5
+    parts:
+      - name: main_body
+        file: b.scad
+        filament: 1  # Use AMS slot 1
+      
+      - name: cover
+        file: a.scad
+        filament: 2  # Use AMS slot 2

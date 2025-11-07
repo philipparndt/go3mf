@@ -57,11 +57,17 @@ func (c *Combiner) Combine(inputFiles []string, outputFile string) error {
 	}
 
 	// Create a parent object with components
+	// Arrange objects side by side with spacing to avoid overlap
+	spacing := 50.0 // mm spacing between objects
 	var components []models.Component
 	for i := range allObjects {
+		// Position objects along the X axis with spacing
+		xOffset := float64(i) * spacing
+		transform := fmt.Sprintf("1 0 0 0 1 0 0 0 1 %.2f 0 0", xOffset)
+
 		components = append(components, models.Component{
 			ObjectID:  strconv.Itoa(i + 1),
-			Transform: "1 0 0 0 1 0 0 0 1 0 0 0",
+			Transform: transform,
 		})
 	}
 
@@ -335,14 +341,16 @@ func writeModelSettings(outZip *zip.Writer, scadFiles []models.ScadFile) error {
 	parentID := strconv.Itoa(len(scadFiles) + 1)
 
 	settings := models.ModelSettings{
-		Object: models.SettingsObject{
-			ID: parentID,
-			Metadata: []models.SettingsMetadata{
-				{Key: "name", Value: "combined"},
-				{Key: "extruder", Value: "1"},
-				{FaceCount: totalFaces},
+		Objects: []models.SettingsObject{
+			{
+				ID: parentID,
+				Metadata: []models.SettingsMetadata{
+					{Key: "name", Value: "combined"},
+					{Key: "extruder", Value: "1"},
+					{FaceCount: totalFaces},
+				},
+				Parts: parts,
 			},
-			Parts: parts,
 		},
 		Plate: models.Plate{
 			Metadata: []models.SettingsMetadata{
@@ -351,11 +359,13 @@ func writeModelSettings(outZip *zip.Writer, scadFiles []models.ScadFile) error {
 				{Key: "locked", Value: "false"},
 				{Key: "filament_map_mode", Value: "Auto For Flush"},
 			},
-			ModelInstance: models.ModelInstance{
-				Metadata: []models.SettingsMetadata{
-					{Key: "object_id", Value: parentID},
-					{Key: "instance_id", Value: "0"},
-					{Key: "identify_id", Value: "1"},
+			ModelInstances: []models.ModelInstance{
+				{
+					Metadata: []models.SettingsMetadata{
+						{Key: "object_id", Value: parentID},
+						{Key: "instance_id", Value: "0"},
+						{Key: "identify_id", Value: "1"},
+					},
 				},
 			},
 		},

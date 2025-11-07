@@ -3,279 +3,211 @@ package cmd
 import (
 	"fmt"
 	"os"
-
-	"path/filepath"
 	"strings"
 
 	"github.com/alecthomas/kong"
-	"github.com/user/go3mf/internal/config"
-	"github.com/user/go3mf/internal/models"
-	"github.com/user/go3mf/internal/preconditions"
-	"github.com/user/go3mf/internal/renderer"
-	"github.com/user/go3mf/internal/stl"
-	"github.com/user/go3mf/internal/threemf"
-	"github.com/user/go3mf/internal/threemf/combine"
+	"github.com/user/go3mf/internal/buildplan"
+	"github.com/user/go3mf/internal/inspect"
 	"github.com/user/go3mf/internal/ui"
 	"github.com/user/go3mf/version"
 )
 
 type CLI struct {
-	CombineScad *CombineScadCmd `cmd:"" help:"Render SCAD files and combine into single 3MF"`
-	CombineYaml *CombineYamlCmd `cmd:"" help:"Combine files based on YAML configuration"`
-	Combine3MF  *Combine3MFCmd  `cmd:"" help:"Combine multiple 3MF files into single model"`
-	CombineSTL  *CombineSTLCmd  `cmd:"" help:"Combine multiple STL files into single model"`
-	Version     *VersionCmd     `cmd:"" help:"Show version information"`
+	Combine *CombineCmd `cmd:"" help:"Combine files into single 3MF (supports YAML, SCAD, 3MF, STL)"`
+	Inspect *InspectCmd `cmd:"" help:"Inspect a 3MF file and show its contents"`
+	Version *VersionCmd `cmd:"" help:"Show version information"`
 }
 
-type CombineScadCmd struct {
-	Output string   `help:"Output 3MF file path" default:"combined.3mf" short:"o"`
-	Files  []string `arg:"" help:"SCAD files to combine. Format: path or path:name" required:""`
+// AfterApply adds examples to the help output
+func (cli *CLI) AfterApply() error {
+	return nil
 }
 
-func (c *CombineScadCmd) Run() error {
-	// Check preconditions
-	ui.PrintHeader("Checking preconditions...")
-	if err := preconditions.Check(); err != nil {
-		ui.PrintError("OpenSCAD not found: " + err.Error())
-		os.Exit(1)
-	}
-	ui.PrintSuccess("OpenSCAD is installed")
+type CombineCmd struct {
+	Output string   `help:"Output file path (default: combined.3mf)" short:"o"`
+	Object bool     `help:"Start a new object group. Follow with: -n NAME [-c FILAMENT] file1 file2... Repeat --object for multiple groups." name:"object"`
+	Files  []string `arg:"" optional:"" help:"Files to combine. Simple mode: file.scad or file.scad:name:filament. Object mode: use --object flag (see below)."`
 
-	// Validate files
-	ui.PrintStep("Validating SCAD files...")
-	if err := preconditions.ValidateFiles(c.Files); err != nil {
-		ui.PrintError(err.Error())
-		os.Exit(1)
-	}
+	Objects []buildplan.ObjectGroup `kong:"-"` // Parsed object groups
+}
 
-	// Parse input files
-	var scadFiles []models.ScadFile
-	for _, arg := range c.Files {
-		parts := strings.Split(arg, ":")
-		path := parts[0]
+// Help adds additional help text with examples
+func (c *CombineCmd) Help() string {
+	return renderCombineHelp()
+}
 
-		// Convert to absolute path
-		absPath, err := filepath.Abs(path)
+func (c *CombineCmd) Run() error {
+	// If --object flag is used anywhere, parse from raw args for better UX
+	if c.Object || containsObjectFlag(os.Args) {
+		var err error
+		c.Objects, err = parseObjectGroupsFromRawArgs(os.Args)
 		if err != nil {
-			ui.PrintError(fmt.Sprintf("Invalid file path %s: %v", path, err))
+			ui.PrintError("Failed to parse object groups: " + err.Error())
 			os.Exit(1)
 		}
+		if len(c.Objects) > 0 {
+			c.Files = nil
+		}
+	}
 
-		// Use custom name if provided
-		name := ""
-		filamentSlot := 0 // 0 means auto-assign
+	// Validate that we have either Files or Objects, but require at least one
+	if len(c.Files) == 0 && len(c.Objects) == 0 {
+		ui.PrintError("No files or objects specified")
+		os.Exit(1)
+	}
 
-		if len(parts) > 1 {
-			name = parts[1]
-		} else {
-			// Use filename without extension
-			name = filepath.Base(absPath[:len(absPath)-len(filepath.Ext(absPath))])
+	// Determine output file if not specified
+	outputFile := c.Output
+	if outputFile == "" {
+		outputFile = "combined.3mf"
+	}
+
+	// Create build plan
+	planner := buildplan.NewPlanner()
+	plan, err := planner.CreatePlan(c.Files, c.Objects, outputFile)
+	if err != nil {
+		ui.PrintError("Failed to create build plan: " + err.Error())
+		os.Exit(1)
+	}
+
+	// Execute the plan
+	if err := plan.Execute(); err != nil {
+		ui.PrintError(err.Error())
+		os.Exit(1)
+	}
+
+	return nil
+}
+
+// containsObjectFlag checks if --object is present in args
+func containsObjectFlag(args []string) bool {
+	for _, arg := range args {
+		if arg == "--object" {
+			return true
+		}
+	}
+	return false
+}
+
+// parseObjectGroupsFromRawArgs parses the new flag-based format:
+// --object -n "Name" -c 1 file1.scad -c 2 file2.scad --object -n "Next" file3.scad
+func parseObjectGroupsFromRawArgs(args []string) ([]buildplan.ObjectGroup, error) {
+	var groups []buildplan.ObjectGroup
+	var currentGroup *buildplan.ObjectGroup
+	var currentFilament int
+	inCombineCmd := false
+	i := 0
+
+	for i < len(args) {
+		arg := args[i]
+
+		// Wait until we're in the combine command
+		if arg == "combine" {
+			inCombineCmd = true
+			i++
+			continue
 		}
 
-		// Parse optional filament slot (format: path:name:slot)
-		if len(parts) > 2 {
-			slot := 0
-			_, err := fmt.Sscanf(parts[2], "%d", &slot)
-			if err == nil && slot >= 1 && slot <= 4 {
-				filamentSlot = slot
-			} else {
-				ui.PrintError(fmt.Sprintf("Invalid filament slot '%s' for %s. Must be 1-4.", parts[2], path))
-				os.Exit(1)
+		if !inCombineCmd {
+			i++
+			continue
+		}
+
+		// Skip output flag and its value
+		if arg == "-o" || arg == "--output" {
+			i += 2
+			continue
+		}
+
+		// Start new object group
+		if arg == "--object" {
+			// Save previous group if exists
+			if currentGroup != nil && len(currentGroup.Files) > 0 {
+				groups = append(groups, *currentGroup)
+			}
+			currentGroup = &buildplan.ObjectGroup{
+				Name:  "",
+				Files: []string{},
+			}
+			currentFilament = 0
+			i++
+			continue
+		}
+
+		// Parse -n flag (object name)
+		if (arg == "-n" || arg == "--name") && currentGroup != nil {
+			if i+1 < len(args) {
+				currentGroup.Name = args[i+1]
+				i += 2
+				continue
 			}
 		}
 
-		scadFiles = append(scadFiles, models.ScadFile{
-			Path:         absPath,
-			Name:         name,
-			FilamentSlot: filamentSlot,
-		})
-	}
-
-	// Render SCAD files
-	ui.PrintHeader("Rendering SCAD files...")
-	baseDir := filepath.Dir(scadFiles[0].Path)
-	var scadPaths []string
-	for _, scad := range scadFiles {
-		scadPaths = append(scadPaths, scad.Path)
-	}
-
-	tempFiles, err := renderer.RenderMultipleSCAD(baseDir, scadPaths)
-	if err != nil {
-		ui.PrintError(err.Error())
-		os.Exit(1)
-	}
-	defer renderer.CleanupTempFiles(tempFiles)
-
-	for _, scad := range scadFiles {
-		ui.PrintStep("Rendered " + scad.Path + " → " + scad.Name)
-	}
-
-	// Combine 3MF files
-	ui.PrintHeader("Combining 3MF files...")
-	combiner := threemf.NewCombiner()
-	if err := combiner.Combine(tempFiles, scadFiles, c.Output); err != nil {
-		ui.PrintError(err.Error())
-		os.Exit(1)
-	}
-
-	// Print success
-	ui.PrintSuccess("Combined 3MF file created: " + c.Output)
-	var names []string
-	for _, scad := range scadFiles {
-		names = append(names, scad.Name)
-	}
-	ui.PrintObjectList(names)
-	return nil
-}
-
-type CombineYamlCmd struct {
-	Config string `arg:"" help:"YAML configuration file path" required:""`
-}
-
-func (c *CombineYamlCmd) Run() error {
-	// Load and validate YAML configuration
-	ui.PrintHeader("Loading configuration...")
-	loader := config.NewLoader()
-	cfg, err := loader.Load(c.Config)
-	if err != nil {
-		ui.PrintError("Failed to load config: " + err.Error())
-		os.Exit(1)
-	}
-	ui.PrintSuccess(fmt.Sprintf("Loaded configuration with %d object(s)", len(cfg.Objects)))
-
-	// Display configuration summary
-	for _, obj := range cfg.Objects {
-		ui.PrintStep(fmt.Sprintf("Object '%s' with %d part(s)", obj.Name, len(obj.Parts)))
-		for _, part := range obj.Parts {
-			filamentInfo := ""
-			if part.Filament > 0 {
-				filamentInfo = fmt.Sprintf(" [filament %d]", part.Filament)
-			}
-			ui.PrintStep(fmt.Sprintf("  - %s: %s%s", part.Name, filepath.Base(part.File), filamentInfo))
-		}
-	}
-
-	// Check preconditions
-	ui.PrintHeader("Checking preconditions...")
-	if err := preconditions.Check(); err != nil {
-		ui.PrintError("OpenSCAD not found: " + err.Error())
-		os.Exit(1)
-	}
-	ui.PrintSuccess("OpenSCAD is installed")
-
-	// Convert YAML config to ScadFile list for rendering
-	scadFiles := loader.ConvertToScadFiles(cfg)
-
-	// Validate all files exist
-	ui.PrintStep("Validating files...")
-	var allPaths []string
-	for _, scad := range scadFiles {
-		allPaths = append(allPaths, scad.Path)
-	}
-	if err := preconditions.ValidateFiles(allPaths); err != nil {
-		ui.PrintError(err.Error())
-		os.Exit(1)
-	}
-
-	// Render SCAD files
-	ui.PrintHeader("Rendering SCAD files...")
-	baseDir := filepath.Dir(scadFiles[0].Path)
-	var scadPaths []string
-	for _, scad := range scadFiles {
-		scadPaths = append(scadPaths, scad.Path)
-	}
-
-	tempFiles, err := renderer.RenderMultipleSCAD(baseDir, scadPaths)
-	if err != nil {
-		ui.PrintError(err.Error())
-		os.Exit(1)
-	}
-	defer renderer.CleanupTempFiles(tempFiles)
-
-	for _, scad := range scadFiles {
-		ui.PrintStep("Rendered " + filepath.Base(scad.Path) + " → " + scad.Name)
-	}
-
-	// Combine 3MF files
-	ui.PrintHeader("Combining 3MF files...")
-	combiner := threemf.NewCombiner()
-	if err := combiner.CombineWithGroups(tempFiles, scadFiles, cfg.Output); err != nil {
-		ui.PrintError(err.Error())
-		os.Exit(1)
-	}
-
-	// Print success
-	ui.PrintSuccess("Combined 3MF file created: " + cfg.Output)
-
-	// Show objects grouped structure
-	ui.PrintStep("Objects in model:")
-	for _, obj := range cfg.Objects {
-		if len(obj.Parts) == 1 {
-			ui.PrintStep(fmt.Sprintf("  • %s (1 part)", obj.Name))
-		} else {
-			ui.PrintStep(fmt.Sprintf("  • %s (%d parts)", obj.Name, len(obj.Parts)))
-			for _, part := range obj.Parts {
-				ui.PrintStep(fmt.Sprintf("    - %s", part.Name))
+		// Parse -c flag (filament/color)
+		if (arg == "-c" || arg == "--color" || arg == "--filament") && currentGroup != nil {
+			if i+1 < len(args) {
+				fmt.Sscanf(args[i+1], "%d", &currentFilament)
+				i += 2
+				continue
 			}
 		}
-	}
-	return nil
-}
 
-type Combine3MFCmd struct {
-	Output string   `help:"Output 3MF file path" default:"combined.3mf" short:"o"`
-	Files  []string `arg:"" help:"3MF files to combine" required:""`
-}
-
-func (c *Combine3MFCmd) Run() error {
-	// Validate files exist
-	ui.PrintHeader("Validating 3MF files...")
-	for _, file := range c.Files {
-		if _, err := os.Stat(file); err != nil {
-			ui.PrintError("File not found: " + file)
-			os.Exit(1)
+		// If we have a current group and this looks like a file, add it
+		if currentGroup != nil && isFile(arg) {
+			// Format: path or path:name or path:name:filament
+			// If filament was set via -c, append it
+			fileSpec := arg
+			if currentFilament > 0 {
+				// Check how many colons are in the arg
+				colonCount := strings.Count(arg, ":")
+				if colonCount == 0 {
+					// Simple path, use filename as name and add filament
+					// Will be: path::filament (name will be derived from filename)
+					fileSpec = fmt.Sprintf("%s::%d", arg, currentFilament)
+				} else if colonCount == 1 {
+					// path:name format, add filament
+					fileSpec = fmt.Sprintf("%s:%d", arg, currentFilament)
+				}
+				// If already has 2+ colons, keep as-is (fully specified)
+			}
+			currentGroup.Files = append(currentGroup.Files, fileSpec)
+			currentFilament = 0 // Reset after using
+			i++
+			continue
 		}
-		ui.PrintStep("Found " + file)
+
+		i++
 	}
 
-	// Combine 3MF files
-	ui.PrintHeader("Combining 3MF files...")
-	combiner := combine.NewCombiner()
-	if err := combiner.Combine(c.Files, c.Output); err != nil {
-		ui.PrintError(err.Error())
-		os.Exit(1)
-	}
-
-	ui.PrintSuccess("Combined 3MF file created: " + c.Output)
-	return nil
-}
-
-type CombineSTLCmd struct {
-	Output string   `help:"Output STL file path" default:"combined.stl" short:"o"`
-	Files  []string `arg:"" help:"STL files to combine" required:""`
-}
-
-func (c *CombineSTLCmd) Run() error {
-	// Validate files exist
-	ui.PrintHeader("Validating STL files...")
-	for _, file := range c.Files {
-		if _, err := os.Stat(file); err != nil {
-			ui.PrintError("File not found: " + file)
-			os.Exit(1)
+	// Don't forget the last group
+	if currentGroup != nil && len(currentGroup.Files) > 0 {
+		if currentGroup.Name == "" {
+			return nil, fmt.Errorf("object group must have a name (use -n flag)")
 		}
-		ui.PrintStep("Found " + file)
+		groups = append(groups, *currentGroup)
 	}
 
-	// Combine STL files
-	ui.PrintHeader("Combining STL files...")
-	combiner := stl.NewCombiner()
-	if err := combiner.Combine(c.Files, c.Output); err != nil {
-		ui.PrintError(err.Error())
-		os.Exit(1)
-	}
+	return groups, nil
+}
 
-	ui.PrintSuccess("Combined STL file created: " + c.Output)
-	return nil
+// isFile checks if a string looks like a file path
+func isFile(s string) bool {
+	// Check for file extensions or path indicators
+	return strings.HasSuffix(s, ".scad") ||
+		strings.HasSuffix(s, ".3mf") ||
+		strings.HasSuffix(s, ".stl") ||
+		strings.Contains(s, "/") ||
+		strings.Contains(s, "\\") ||
+		(strings.Contains(s, ".") && !strings.HasPrefix(s, "-"))
+}
+
+type InspectCmd struct {
+	File string `arg:"" help:"3MF file to inspect"`
+}
+
+func (c *InspectCmd) Run() error {
+	inspector := inspect.NewInspector()
+	return inspector.Inspect(c.File)
 }
 
 type VersionCmd struct{}
@@ -288,6 +220,17 @@ func (c *VersionCmd) Run() error {
 
 // Parse parses command line arguments and executes the appropriate command
 func Parse() {
+	// Check if we're using the new --object syntax before Kong parses
+	if containsObjectFlag(os.Args) {
+		// Handle this specially
+		if err := parseAndRunWithObjects(); err != nil {
+			ui.PrintError(err.Error())
+			os.Exit(1)
+		}
+		return
+	}
+
+	// Normal Kong parsing for other cases
 	cli := &CLI{}
 	ctx := kong.Parse(cli,
 		kong.Name("go3mf"),
@@ -299,4 +242,35 @@ func Parse() {
 		ui.PrintError(err.Error())
 		os.Exit(1)
 	}
+}
+
+// parseAndRunWithObjects handles the special --object syntax separately from Kong
+func parseAndRunWithObjects() error {
+	// Extract output file
+	outputFile := "combined.3mf"
+	for i, arg := range os.Args {
+		if (arg == "-o" || arg == "--output") && i+1 < len(os.Args) {
+			outputFile = os.Args[i+1]
+			break
+		}
+	}
+
+	// Parse object groups
+	groups, err := parseObjectGroupsFromRawArgs(os.Args)
+	if err != nil {
+		return fmt.Errorf("failed to parse object groups: %w", err)
+	}
+
+	if len(groups) == 0 {
+		return fmt.Errorf("no objects defined")
+	}
+
+	// Create and execute build plan
+	planner := buildplan.NewPlanner()
+	plan, err := planner.CreatePlan(nil, groups, outputFile)
+	if err != nil {
+		return fmt.Errorf("failed to create build plan: %w", err)
+	}
+
+	return plan.Execute()
 }

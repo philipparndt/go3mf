@@ -214,3 +214,133 @@ func (p *Packer) PackOptimal(objects []Rectangle, maxBuildPlateWidth float64) []
 
 	return results
 }
+
+// PackCompact arranges objects as compactly as possible using a guillotine algorithm
+// This algorithm recursively partitions the space to create a compact rectangular packing
+// Result is a more balanced layout in both X and Y directions to reduce printer head travel time
+func (p *Packer) PackCompact(objects []Rectangle) []PackingResult {
+	if len(objects) == 0 {
+		return []PackingResult{}
+	}
+
+	// Sort objects by height (descending), then by width for better packing
+	sorted := make([]Rectangle, len(objects))
+	copy(sorted, objects)
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].Height != sorted[j].Height {
+			return sorted[i].Height > sorted[j].Height
+		}
+		return sorted[i].Width > sorted[j].Width
+	})
+
+	results := make([]PackingResult, len(sorted))
+
+	// Use guillotine algorithm with a target aspect ratio close to 1:1 (square)
+	// Start with a large virtual bin
+	maxHeight := 500.0
+
+	// Calculate total area to estimate optimal bin dimensions
+	totalArea := 0.0
+	for _, obj := range sorted {
+		totalArea += (obj.Width + p.margin) * (obj.Height + p.margin)
+	}
+
+	// Estimate optimal width to create a more square layout
+	// This balances width and height more evenly
+	optimalWidth := math.Sqrt(totalArea * 1.2) // 20% padding
+	if optimalWidth < 100 {
+		optimalWidth = 100
+	}
+	if optimalWidth > 400 {
+		optimalWidth = 400
+	}
+
+	// Create initial packing spaces
+	spaces := []struct {
+		x, y, width, height float64
+	}{
+		{0, 0, optimalWidth, maxHeight},
+	}
+
+	// Pack each object into available spaces
+	for i, obj := range sorted {
+		packed := false
+
+		// Try to fit object in existing spaces
+		for spaceIdx, space := range spaces {
+			if obj.Width+p.margin <= space.width && obj.Height+p.margin <= space.height {
+				// Place object in this space
+				results[i] = PackingResult{
+					X:      space.x,
+					Y:      space.y,
+					ID:     obj.ID,
+					Fits:   true,
+					Width:  obj.Width,
+					Height: obj.Height,
+				}
+
+				// Split the space using guillotine method
+				objWidthWithMargin := obj.Width + p.margin
+				objHeightWithMargin := obj.Height + p.margin
+
+				// Create two new spaces: right and bottom
+				newSpaces := []struct {
+					x, y, width, height float64
+				}{}
+
+				// Add remaining space to the right
+				if space.width > objWidthWithMargin {
+					newSpaces = append(newSpaces, struct {
+						x, y, width, height float64
+					}{
+						x:      space.x + objWidthWithMargin,
+						y:      space.y,
+						width:  space.width - objWidthWithMargin,
+						height: space.height,
+					})
+				}
+
+				// Add remaining space below
+				if space.height > objHeightWithMargin {
+					newSpaces = append(newSpaces, struct {
+						x, y, width, height float64
+					}{
+						x:      space.x,
+						y:      space.y + objHeightWithMargin,
+						width:  objWidthWithMargin,
+						height: space.height - objHeightWithMargin,
+					})
+				}
+
+				// Remove used space and add new spaces
+				spaces = append(spaces[:spaceIdx], spaces[spaceIdx+1:]...)
+				spaces = append(spaces, newSpaces...)
+
+				// Sort spaces to prioritize placement in lower-left corner (compact layout)
+				sort.Slice(spaces, func(a, b int) bool {
+					if spaces[a].y != spaces[b].y {
+						return spaces[a].y < spaces[b].y
+					}
+					return spaces[a].x < spaces[b].x
+				})
+
+				packed = true
+				break
+			}
+		}
+
+		if !packed {
+			// Fallback: place at origin of a new space if nothing fits
+			results[i] = PackingResult{
+				X:      0,
+				Y:      0,
+				ID:     obj.ID,
+				Fits:   false,
+				Width:  obj.Width,
+				Height: obj.Height,
+			}
+		}
+	}
+
+	return results
+}

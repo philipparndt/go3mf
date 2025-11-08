@@ -1,6 +1,36 @@
 package models
 
-import "encoding/xml"
+import (
+	"encoding/xml"
+	"strings"
+)
+
+// PackingAlgorithm represents the algorithm used for placing objects on the build plate
+type PackingAlgorithm string
+
+const (
+	// PackingAlgorithmDefault creates a long print surface (shelving algorithm)
+	PackingAlgorithmDefault PackingAlgorithm = "default"
+
+	// PackingAlgorithmCompact places objects as compactly as possible in both directions
+	PackingAlgorithmCompact PackingAlgorithm = "compact"
+)
+
+// NewPackingAlgorithm creates a PackingAlgorithm from a string, defaulting to PackingAlgorithmDefault
+func NewPackingAlgorithm(s string) PackingAlgorithm {
+	s = strings.ToLower(strings.TrimSpace(s))
+	switch s {
+	case "compact":
+		return PackingAlgorithmCompact
+	default:
+		return PackingAlgorithmDefault
+	}
+}
+
+// String returns the string representation of the packing algorithm
+func (pa PackingAlgorithm) String() string {
+	return string(pa)
+}
 
 // Model represents a 3MF model structure
 type Model struct {
@@ -102,9 +132,10 @@ type ObjectGroup struct {
 
 // YamlConfig represents the complete YAML configuration file
 type YamlConfig struct {
-	Output          string       `yaml:"output"`
-	PackingDistance float64      `yaml:"packing_distance,omitempty"` // Distance between objects in mm (default: 10.0)
-	Objects         []YamlObject `yaml:"objects"`
+	Output             string           `yaml:"output"`
+	PackingDistance    float64          `yaml:"packing_distance,omitempty"`   // Distance between objects in mm (default: 10.0)
+	PackingAlgorithm   string           `yaml:"packing_algorithm,omitempty"`  // Packing algorithm: "default" or "compact" (default: "default")
+	Objects            []YamlObject     `yaml:"objects"`
 }
 
 // YamlObject represents a single object in the model

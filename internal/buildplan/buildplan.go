@@ -554,7 +554,13 @@ func (s *CombineWithGroupsStep) Execute() error {
 		packingDistance = buildContext.YAMLConfig.PackingDistance
 	}
 
-	if err := combiner.CombineWithGroupsAndDistance(buildContext.RenderedFiles, buildContext.SCADFiles, buildContext.OutputFile, packingDistance); err != nil {
+	// Use packing algorithm from config if available, otherwise default to "default"
+	packingAlgo := models.PackingAlgorithmDefault
+	if buildContext.YAMLConfig != nil && buildContext.YAMLConfig.PackingAlgorithm != "" {
+		packingAlgo = models.NewPackingAlgorithm(buildContext.YAMLConfig.PackingAlgorithm)
+	}
+
+	if err := combiner.CombineWithGroupsAndDistance(buildContext.RenderedFiles, buildContext.SCADFiles, buildContext.OutputFile, packingDistance, packingAlgo); err != nil {
 		return err
 	}
 

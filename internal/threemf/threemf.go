@@ -308,12 +308,12 @@ func (c *Combiner) CombineWithDistance(tempFiles []string, scadFiles []models.Sc
 
 // CombineWithGroups combines multiple 3MF files into one, grouping parts by object name
 func (c *Combiner) CombineWithGroups(tempFiles []string, scadFiles []models.ScadFile, outputFile string) error {
-	c.CombineWithGroupsAndDistance(tempFiles, scadFiles, outputFile, 10.0)
+	c.CombineWithGroupsAndDistance(tempFiles, scadFiles, outputFile, 10.0, models.PackingAlgorithmDefault)
 	return nil
 }
 
 // CombineWithGroupsAndDistance combines multiple 3MF files with grouping and configurable packing distance
-func (c *Combiner) CombineWithGroupsAndDistance(tempFiles []string, scadFiles []models.ScadFile, outputFile string, packingDistance float64) error {
+func (c *Combiner) CombineWithGroupsAndDistance(tempFiles []string, scadFiles []models.ScadFile, outputFile string, packingDistance float64, algorithm models.PackingAlgorithm) error {
 	var allMeshObjects []models.Object
 	nextID := 1
 
@@ -425,9 +425,16 @@ func (c *Combiner) CombineWithGroupsAndDistance(tempFiles []string, scadFiles []
 		packingID++
 	}
 
-	// Use bin packing algorithm to arrange objects
+	// Use bin packing algorithm to arrange objects based on selected algorithm
 	packer := geometry.NewPacker(margin)
-	packingResults := packer.PackOptimal(packingObjects, 256.0) // 256mm typical build plate width
+	var packingResults []geometry.PackingResult
+	
+	switch algorithm {
+	case models.PackingAlgorithmCompact:
+		packingResults = packer.PackCompact(packingObjects)
+	default:
+		packingResults = packer.PackOptimal(packingObjects, 256.0) // 256mm typical build plate width
+	}
 
 	// Create objects and build items based on packing results
 	for _, result := range packingResults {

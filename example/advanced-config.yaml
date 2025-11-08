@@ -4,6 +4,9 @@
 
 output: multi-part-assembly.3mf
 
+# Packing distance between objects in mm (default: 10.0)
+packing_distance: 10.0
+
 objects:
   # A case assembly with multiple parts
   - name: Case

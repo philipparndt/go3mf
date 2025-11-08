@@ -3,6 +3,9 @@
 
 output: simple_text_plate.3mf
 
+# Packing distance between objects in mm (default: 10.0)
+packing_distance: 10.0
+
 objects:
   - name: Hello
     config:

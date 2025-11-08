@@ -102,9 +102,9 @@ type ObjectGroup struct {
 
 // YamlConfig represents the complete YAML configuration file
 type YamlConfig struct {
-	Output           string       `yaml:"output"`
-	PackingDistance  float64      `yaml:"packing_distance,omitempty"` // Distance between objects in mm (default: 10.0)
-	Objects          []YamlObject `yaml:"objects"`
+	Output          string       `yaml:"output"`
+	PackingDistance float64      `yaml:"packing_distance,omitempty"` // Distance between objects in mm (default: 10.0)
+	Objects         []YamlObject `yaml:"objects"`
 }
 
 // YamlObject represents a single object in the model

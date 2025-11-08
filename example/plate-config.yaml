@@ -4,6 +4,9 @@
 # Output file path
 output: plate_with_text_demo.3mf
 
+# Packing distance between objects in mm (default: 10.0)
+packing_distance: 10.0
+
 # Define objects
 objects:
   # Plate and text assembly

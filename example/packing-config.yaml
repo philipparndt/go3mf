@@ -4,6 +4,9 @@
 # Output file path (relative to this config file or absolute)
 output: combined_from_yaml.3mf
 
+# Packing distance between objects in mm (default: 10.0)
+packing_distance: 10.0
+
 # Define objects - each object groups related parts
 objects:
   - name: o1

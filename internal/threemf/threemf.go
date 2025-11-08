@@ -215,6 +215,12 @@ func NewCombiner() *Combiner {
 
 // Combine combines multiple 3MF files into one
 func (c *Combiner) Combine(tempFiles []string, scadFiles []models.ScadFile, outputFile string) error {
+	c.CombineWithDistance(tempFiles, scadFiles, outputFile, 10.0)
+	return nil
+}
+
+// CombineWithDistance combines multiple 3MF files with a configurable packing distance
+func (c *Combiner) CombineWithDistance(tempFiles []string, scadFiles []models.ScadFile, outputFile string, packingDistance float64) error {
 	var allObjects []models.Object
 
 	// Read all models and collect their objects
@@ -235,7 +241,7 @@ func (c *Combiner) Combine(tempFiles []string, scadFiles []models.ScadFile, outp
 
 	// Create a parent object with components
 	// Arrange objects side by side with spacing to avoid overlap
-	const margin = 10.0 // mm margin between objects
+	margin := packingDistance // mm margin between objects
 	var components []models.Component
 	currentXOffset := 0.0
 
@@ -302,6 +308,12 @@ func (c *Combiner) Combine(tempFiles []string, scadFiles []models.ScadFile, outp
 
 // CombineWithGroups combines multiple 3MF files into one, grouping parts by object name
 func (c *Combiner) CombineWithGroups(tempFiles []string, scadFiles []models.ScadFile, outputFile string) error {
+	c.CombineWithGroupsAndDistance(tempFiles, scadFiles, outputFile, 10.0)
+	return nil
+}
+
+// CombineWithGroupsAndDistance combines multiple 3MF files with grouping and configurable packing distance
+func (c *Combiner) CombineWithGroupsAndDistance(tempFiles []string, scadFiles []models.ScadFile, outputFile string, packingDistance float64) error {
 	var allMeshObjects []models.Object
 	nextID := 1
 
@@ -351,7 +363,7 @@ func (c *Combiner) CombineWithGroups(tempFiles []string, scadFiles []models.Scad
 	var settingsGroups []models.ObjectGroup
 
 	// Prepare objects for bin packing
-	const margin = 10.0 // mm margin between objects
+	margin := packingDistance // mm margin between objects
 	var packingObjects []geometry.Rectangle
 	objectInfoMap := make(map[int]struct {
 		meshIDs      []int

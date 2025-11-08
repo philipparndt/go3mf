@@ -547,7 +547,14 @@ func (s *CombineWithGroupsStep) Execute() error {
 	ui.PrintInfo("Merging objects and materials...")
 
 	combiner := threemf.NewCombiner()
-	if err := combiner.CombineWithGroups(buildContext.RenderedFiles, buildContext.SCADFiles, buildContext.OutputFile); err != nil {
+	
+	// Use packing distance from config if available, otherwise default to 10.0
+	packingDistance := 10.0
+	if buildContext.YAMLConfig != nil && buildContext.YAMLConfig.PackingDistance > 0 {
+		packingDistance = buildContext.YAMLConfig.PackingDistance
+	}
+	
+	if err := combiner.CombineWithGroupsAndDistance(buildContext.RenderedFiles, buildContext.SCADFiles, buildContext.OutputFile, packingDistance); err != nil {
 		return err
 	}
 

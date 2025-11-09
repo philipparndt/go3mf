@@ -3,6 +3,8 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"runtime"
 	"strings"
 
 	"github.com/alecthomas/kong"
@@ -26,6 +28,7 @@ func (cli *CLI) AfterApply() error {
 type CombineCmd struct {
 	Output string   `help:"Output file path (default: combined.3mf)" short:"o"`
 	Object bool     `help:"Start a new object group. Follow with: -n NAME [-c FILAMENT] file1 file2... Repeat --object for multiple groups." name:"object"`
+	Open   bool     `help:"Open the result file in the default application after combining"`
 	Files  []string `arg:"" optional:"" help:"Files to combine. Simple mode: file.scad or file.scad:name:filament. Object mode: use --object flag (see below)."`
 
 	Objects []buildplan.ObjectGroup `kong:"-"` // Parsed object groups
@@ -34,6 +37,24 @@ type CombineCmd struct {
 // Help adds additional help text with examples
 func (c *CombineCmd) Help() string {
 	return renderCombineHelp()
+}
+
+// openFile opens a file in the default application for the current platform
+func openFile(filepath string) error {
+	var cmd *exec.Cmd
+
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", filepath)
+	case "linux":
+		cmd = exec.Command("xdg-open", filepath)
+	case "windows":
+		cmd = exec.Command("cmd", "/c", "start", "", filepath)
+	default:
+		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
+	}
+
+	return cmd.Start()
 }
 
 func (c *CombineCmd) Run() error {
@@ -76,6 +97,13 @@ func (c *CombineCmd) Run() error {
 		os.Exit(1)
 	}
 
+	// Open the file in default application if requested
+	if c.Open {
+		if err := openFile(outputFile); err != nil {
+			ui.PrintError("Failed to open file: " + err.Error())
+		}
+	}
+
 	return nil
 }
 
@@ -116,6 +144,12 @@ func parseObjectGroupsFromRawArgs(args []string) ([]buildplan.ObjectGroup, error
 		// Skip output flag and its value
 		if arg == "-o" || arg == "--output" {
 			i += 2
+			continue
+		}
+
+		// Skip open flag
+		if arg == "--open" {
+			i++
 			continue
 		}
 
@@ -246,12 +280,15 @@ func Parse() {
 
 // parseAndRunWithObjects handles the special --object syntax separately from Kong
 func parseAndRunWithObjects() error {
-	// Extract output file
+	// Extract output file and open flag
 	outputFile := "combined.3mf"
+	shouldOpen := false
 	for i, arg := range os.Args {
 		if (arg == "-o" || arg == "--output") && i+1 < len(os.Args) {
 			outputFile = os.Args[i+1]
-			break
+		}
+		if arg == "--open" {
+			shouldOpen = true
 		}
 	}
 
@@ -272,5 +309,16 @@ func parseAndRunWithObjects() error {
 		return fmt.Errorf("failed to create build plan: %w", err)
 	}
 
-	return plan.Execute()
+	if err := plan.Execute(); err != nil {
+		return err
+	}
+
+	// Open the file in default application if requested
+	if shouldOpen {
+		if err := openFile(outputFile); err != nil {
+			ui.PrintError("Failed to open file: " + err.Error())
+		}
+	}
+
+	return nil
 }

@@ -4,6 +4,10 @@ before:
   hooks:
     - go mod tidy
     - go generate ./...
+    - mkdir -p completions
+    - sh -c "go run . completion bash > completions/go3mf.bash"
+    - sh -c "go run . completion zsh > completions/_go3mf"
+    - sh -c "go run . completion fish > completions/go3mf.fish"
 
 builds:
   - env:
@@ -36,6 +40,8 @@ archives:
     format_overrides:
     - goos: windows
       formats: [zip]
+    files:
+      - completions/*
 
 changelog:
   sort: asc
@@ -46,11 +52,13 @@ changelog:
 
 brews:
   - name: go3mf
-
-    goarm: 6
-    goamd64: v1
-
-    url_template: "https://github.com/philipparndt/go3mf/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
+    repository:
+      owner: philipparndt
+      name: homebrew-go3mf
+      branch: main
+      pull_request:
+        enabled: false
+        draft: false
 
     commit_author:
       name: Philipp Arndt
@@ -60,43 +68,14 @@ brews:
 
     directory: Formula
 
-    caveats: "Run using go3mf."
-
     homepage: "https://github.com/philipparndt/go3mf"
 
-    description: "Command-line tool for consuming Kafka topics"
+    description: "3D model file combiner and SCAD renderer"
 
     license: "Apache-2.0"
 
     install: |
       bin.install "go3mf"
-
-      begin
-        bash_output = Utils.safe_popen_read({ "SHELL" => "bash" }, "#{bin}/go3mf completion bash")
-        (bash_completion/"go3mf").write bash_output
-      rescue => e
-        opoo "Failed to install bash completion: #{e}"
-      end
-
-      begin
-        zsh_output = Utils.safe_popen_read({ "SHELL" => "zsh" }, "#{bin}/go3mf completion zsh")
-        (zsh_completion/"_go3mf").write zsh_output
-      rescue => e
-        opoo "Failed to install zsh completion: #{e}"
-      end
-
-      begin
-        fish_output = Utils.safe_popen_read({ "SHELL" => "fish" }, "#{bin}/go3mf completion fish")
-        (fish_completion/"go3mf.fish").write fish_output
-      rescue => e
-        opoo "Failed to install fish completion: #{e}"
-      end
-
-    repository:
-      owner: philipparndt
-      name: homebrew-go3mf
-      branch: main
-
-      pull_request:
-        enabled: false
-        draft: false
+      bash_completion.install "completions/go3mf.bash" => "go3mf"
+      zsh_completion.install "completions/_go3mf"
+      fish_completion.install "completions/go3mf.fish"

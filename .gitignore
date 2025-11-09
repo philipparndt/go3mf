@@ -3,3 +3,5 @@ coverage/
 go3mf
 .idea/
 *.3mf
+completions/
+dist/

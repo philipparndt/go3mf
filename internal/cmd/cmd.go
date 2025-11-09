@@ -100,7 +100,7 @@ func (c *CombineCmd) Run() error {
 
 	// Open the file in default application if requested
 	if c.Open {
-		if err := openFile(outputFile); err != nil {
+		if err := openFile(plan.OutputFile); err != nil {
 			ui.PrintError("Failed to open file: " + err.Error())
 		}
 	}
@@ -316,7 +316,7 @@ func parseAndRunWithObjects() error {
 
 	// Open the file in default application if requested
 	if shouldOpen {
-		if err := openFile(outputFile); err != nil {
+		if err := openFile(plan.OutputFile); err != nil {
 			ui.PrintError("Failed to open file: " + err.Error())
 		}
 	}

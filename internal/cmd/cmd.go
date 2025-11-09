@@ -15,9 +15,10 @@ import (
 )
 
 type CLI struct {
-	Combine *CombineCmd `cmd:"" help:"Combine files into single 3MF (supports YAML, SCAD, 3MF, STL)"`
-	Inspect *InspectCmd `cmd:"" help:"Inspect a 3MF file and show its contents"`
-	Version *VersionCmd `cmd:"" help:"Show version information"`
+	Combine    *CombineCmd    `cmd:"" help:"Combine files into single 3MF (supports YAML, SCAD, 3MF, STL)"`
+	Inspect    *InspectCmd    `cmd:"" help:"Inspect a 3MF file and show its contents"`
+	Version    *VersionCmd    `cmd:"" help:"Show version information"`
+	Completion *CompletionCmd `cmd:"" help:"Generate shell completion script"`
 }
 
 // AfterApply adds examples to the help output

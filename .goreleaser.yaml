@@ -50,7 +50,7 @@ changelog:
       - "^docs:"
       - "^test:"
 
-homebrew:
+brews:
   - name: go3mf
     repository:
       owner: philipparndt

@@ -1,10 +1,17 @@
 package cmd
 
 import (
+	_ "embed"
 	"strings"
 
+	"github.com/alecthomas/chroma/v2/formatters"
+	"github.com/alecthomas/chroma/v2/lexers"
+	"github.com/alecthomas/chroma/v2/styles"
 	"github.com/charmbracelet/lipgloss"
 )
+
+//go:embed example.yaml
+var exampleYAML string
 
 // renderCombineHelp renders the help text for the combine command with lipgloss styling
 func renderCombineHelp() string {
@@ -91,7 +98,51 @@ func renderCombineHelp() string {
 	b.WriteString(sectionStyle.Render("YAML config mode"))
 	b.WriteString("\n")
 	b.WriteString("  " + commandStyle.Render("go3mf combine config.yaml"))
-	b.WriteString("\n")
+	b.WriteString("\n\n")
+
+	// Add YAML example with syntax highlighting
+	b.WriteString(renderYAMLExample(commentStyle, flagStyle, commandStyle))
 
 	return b.String()
+}
+
+// renderYAMLExample renders a YAML configuration example with syntax highlighting using Chroma
+func renderYAMLExample(commentStyle, keyStyle, valueStyle lipgloss.Style) string {
+	lexer := lexers.Get("yaml")
+	if lexer == nil {
+		lexer = lexers.Fallback
+	}
+
+	style := styles.Get("monokai")
+	if style == nil {
+		style = styles.Fallback
+	}
+
+	formatter := formatters.Get("terminal16m")
+	if formatter == nil {
+		formatter = formatters.Fallback
+	}
+
+	var b strings.Builder
+	iterator, err := lexer.Tokenise(nil, exampleYAML)
+	if err != nil {
+		// Fallback to plain text if highlighting fails
+		return "  " + strings.ReplaceAll(exampleYAML, "\n", "\n  ")
+	}
+
+	err = formatter.Format(&b, style, iterator)
+	if err != nil {
+		// Fallback to plain text if formatting fails
+		return "  " + strings.ReplaceAll(exampleYAML, "\n", "\n  ")
+	}
+
+	// Create a bordered style for the YAML example
+	borderStyle := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("8")).
+		Padding(0, 1).
+		MarginLeft(2)
+
+	// Render with border
+	return borderStyle.Render(strings.TrimRight(b.String(), "\n"))
 }

@@ -1,0 +1,43 @@
+# Complete YAML configuration example
+# Supports objects, parts, filament assignment, and packing options
+
+output: combined.3mf
+
+# Distance between objects in mm (default: 10.0)
+packing_distance: 15.0
+
+# Packing algorithm: "default" or "compact" (default: "default")
+# - default: shelf-based layout (tends to be longer)
+# - compact: places objects compactly in X and Y to reduce travel
+packing_algorithm: compact
+
+# Define objects - each object groups related parts
+objects:
+  - name: Case
+    parts:
+      - name: bottom
+        file: case_bottom.scad
+        filament: 1
+
+      - name: top
+        file: case_top.scad
+        filament: 1
+
+  - name: Inserts
+    parts:
+      - name: insert_large
+        file: insert.scad
+        filament: 2
+        config:
+          - cfg.scad: |
+              function size() = 50;
+
+      - name: insert_small
+        file: insert.scad
+        filament: 3
+        config:
+          - cfg.scad: |
+              function size() = 20;
+
+# Supported file types: .scad, .3mf, .stl
+# If filament not specified, auto-assigns slots 1-4 in rotation

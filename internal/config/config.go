@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/user/go3mf/internal/models"
+	"github.com/philipparndt/go3mf/internal/models"
 	"gopkg.in/yaml.v3"
 )
 

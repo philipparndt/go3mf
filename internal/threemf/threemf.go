@@ -8,8 +8,8 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/user/go3mf/internal/geometry"
-	"github.com/user/go3mf/internal/models"
+	"github.com/philipparndt/go3mf/internal/geometry"
+	"github.com/philipparndt/go3mf/internal/models"
 )
 
 // Reader reads 3MF files

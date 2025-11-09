@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/user/go3mf/internal/models"
-	"github.com/user/go3mf/internal/ui"
+	"github.com/philipparndt/go3mf/internal/models"
+	"github.com/philipparndt/go3mf/internal/ui"
 )
 
 // ModelPrinter handles printing model hierarchy and details

@@ -8,10 +8,10 @@ import (
 	"strings"
 
 	"github.com/alecthomas/kong"
-	"github.com/user/go3mf/internal/buildplan"
-	"github.com/user/go3mf/internal/inspect"
-	"github.com/user/go3mf/internal/ui"
-	"github.com/user/go3mf/version"
+	"github.com/philipparndt/go3mf/internal/buildplan"
+	"github.com/philipparndt/go3mf/internal/inspect"
+	"github.com/philipparndt/go3mf/internal/ui"
+	"github.com/philipparndt/go3mf/version"
 )
 
 type CLI struct {

@@ -6,7 +6,7 @@ import (
 	"math"
 	"strconv"
 
-	"github.com/user/go3mf/internal/models"
+	"github.com/philipparndt/go3mf/internal/models"
 )
 
 // BoundingBox represents a 3D bounding box

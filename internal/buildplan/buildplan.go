@@ -6,15 +6,15 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/user/go3mf/internal/config"
-	"github.com/user/go3mf/internal/inspect"
-	"github.com/user/go3mf/internal/models"
-	"github.com/user/go3mf/internal/preconditions"
-	"github.com/user/go3mf/internal/renderer"
-	"github.com/user/go3mf/internal/stl"
-	"github.com/user/go3mf/internal/threemf"
-	"github.com/user/go3mf/internal/threemf/combine"
-	"github.com/user/go3mf/internal/ui"
+	"github.com/philipparndt/go3mf/internal/config"
+	"github.com/philipparndt/go3mf/internal/inspect"
+	"github.com/philipparndt/go3mf/internal/models"
+	"github.com/philipparndt/go3mf/internal/preconditions"
+	"github.com/philipparndt/go3mf/internal/renderer"
+	"github.com/philipparndt/go3mf/internal/stl"
+	"github.com/philipparndt/go3mf/internal/threemf"
+	"github.com/philipparndt/go3mf/internal/threemf/combine"
+	"github.com/philipparndt/go3mf/internal/ui"
 )
 
 // FileType represents the type of input file

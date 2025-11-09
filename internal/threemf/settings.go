@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/user/go3mf/internal/models"
+	"github.com/philipparndt/go3mf/internal/models"
 )
 
 // WriteModelSettings writes the Bambu Studio model_settings.config file

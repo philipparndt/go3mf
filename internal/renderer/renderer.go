@@ -7,8 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/user/go3mf/internal/models"
-	"github.com/user/go3mf/internal/ui"
+	"github.com/philipparndt/go3mf/internal/models"
+	"github.com/philipparndt/go3mf/internal/ui"
 )
 
 // RenderSCAD renders a SCAD file to 3MF format

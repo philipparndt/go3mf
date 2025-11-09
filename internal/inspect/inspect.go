@@ -8,8 +8,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/user/go3mf/internal/models"
-	"github.com/user/go3mf/internal/ui"
+	"github.com/philipparndt/go3mf/internal/models"
+	"github.com/philipparndt/go3mf/internal/ui"
 )
 
 // Inspector provides functionality to inspect 3MF files

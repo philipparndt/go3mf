@@ -30,6 +30,7 @@ type CombineCmd struct {
 	Output string   `help:"Output file path (default: combined.3mf)" short:"o"`
 	Object bool     `help:"Start a new object group. Follow with: -n NAME [-c FILAMENT] file1 file2... Repeat --object for multiple groups." name:"object"`
 	Open   bool     `help:"Open the result file in the default application after combining"`
+	Debug  bool     `help:"Enable debug output (verbose mode)"`
 	Files  []string `arg:"" optional:"" help:"Files to combine. Simple mode: file.scad or file.scad:name:filament. Object mode: use --object flag (see below)."`
 
 	Objects []buildplan.ObjectGroup `kong:"-"` // Parsed object groups
@@ -150,6 +151,12 @@ func parseObjectGroupsFromRawArgs(args []string) ([]buildplan.ObjectGroup, error
 
 		// Skip open flag
 		if arg == "--open" {
+			i++
+			continue
+		}
+
+		// Skip debug flag
+		if arg == "--debug" {
 			i++
 			continue
 		}
@@ -291,6 +298,7 @@ func parseAndRunWithObjects() error {
 		if arg == "--open" {
 			shouldOpen = true
 		}
+		// Debug flag is handled globally by IsVerbose(), no need to parse here
 	}
 
 	// Parse object groups

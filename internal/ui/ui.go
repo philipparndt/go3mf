@@ -240,13 +240,13 @@ func PrintTableHeader(headers ...string) {
 
 // IsVerbose checks if verbose output is enabled
 func IsVerbose() bool {
-	// Check for CI environment variable or --progress=plain flag
+	// Check for CI environment variable or --debug flag
 	if os.Getenv("CI") != "" {
 		return true
 	}
-	// Check for --progress=plain in command line args
+	// Check for --debug in command line args
 	for _, arg := range os.Args {
-		if arg == "--progress=plain" {
+		if arg == "--debug" {
 			return true
 		}
 	}

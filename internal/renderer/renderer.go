@@ -1,15 +1,100 @@
 package renderer
 
 import (
+	"bytes"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/philipparndt/go3mf/internal/models"
 	"github.com/philipparndt/go3mf/internal/ui"
 )
+
+// runOpenSCAD executes openscad command and captures output
+func runOpenSCAD(cmd *exec.Cmd, scadFile string) error {
+	var stdout, stderr bytes.Buffer
+
+	// Always capture output
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+
+	// If in verbose mode, print output regardless of error
+	if ui.IsVerbose() {
+		if stdout.Len() > 0 {
+			fmt.Print(stdout.String())
+		}
+		if stderr.Len() > 0 {
+			fmt.Print(stderr.String())
+		}
+	}
+
+	// If error occurred, display nicely formatted output
+	if err != nil {
+		displayOpenSCADError(scadFile, stdout.String(), stderr.String())
+		return err
+	}
+
+	return nil
+}
+
+// displayOpenSCADError formats and displays OpenSCAD error output
+func displayOpenSCADError(scadFile, stdout, stderr string) {
+	errorStyle := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("1")).
+		Padding(0, 1).
+		MarginTop(1).
+		MarginBottom(1)
+
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("1"))
+
+	fileStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("12")).
+		Bold(true)
+
+	outputStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("8"))
+
+	var content strings.Builder
+
+	content.WriteString(titleStyle.Render("OpenSCAD Error"))
+	content.WriteString("\n\n")
+	content.WriteString("File: ")
+	content.WriteString(fileStyle.Render(scadFile))
+	content.WriteString("\n\n")
+
+	// Combine and clean output
+	combined := stderr + stdout
+	if combined != "" {
+		// Remove excessive blank lines
+		lines := strings.Split(combined, "\n")
+		var cleanedLines []string
+		prevBlank := false
+		for _, line := range lines {
+			isBlank := strings.TrimSpace(line) == ""
+			if !isBlank || !prevBlank {
+				cleanedLines = append(cleanedLines, line)
+			}
+			prevBlank = isBlank
+		}
+
+		output := strings.Join(cleanedLines, "\n")
+		output = strings.TrimSpace(output)
+
+		if output != "" {
+			content.WriteString(outputStyle.Render(output))
+		}
+	}
+
+	fmt.Println(errorStyle.Render(content.String()))
+}
 
 // RenderSCAD renders a SCAD file to 3MF format
 func RenderSCAD(workDir, scadFile, outputFile string) error {
@@ -22,16 +107,7 @@ func RenderSCAD(workDir, scadFile, outputFile string) error {
 	cmd := exec.Command("openscad", "-o", outputFile, absScadFile)
 	cmd.Dir = workDir
 
-	// Only show output in verbose mode, otherwise suppress it
-	if ui.IsVerbose() {
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-	} else {
-		cmd.Stdout = io.Discard
-		cmd.Stderr = io.Discard
-	}
-
-	if err := cmd.Run(); err != nil {
+	if err := runOpenSCAD(cmd, scadFile); err != nil {
 		return fmt.Errorf("failed to render %s: %w", scadFile, err)
 	}
 	return nil
@@ -61,16 +137,7 @@ func RenderSCADWithConfig(workDir, scadFile, outputFile, configContent string) e
 	cmd := exec.Command("openscad", "-o", outputFile, "-D", "cfg_file=\""+configFile+"\"", absScadFile)
 	cmd.Dir = workDir
 
-	// Only show output in verbose mode, otherwise suppress it
-	if ui.IsVerbose() {
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-	} else {
-		cmd.Stdout = io.Discard
-		cmd.Stderr = io.Discard
-	}
-
-	if err := cmd.Run(); err != nil {
+	if err := runOpenSCAD(cmd, scadFile); err != nil {
 		return fmt.Errorf("failed to render %s with config: %w", scadFile, err)
 	}
 	return nil
@@ -114,16 +181,7 @@ func RenderSCADWithConfigFiles(workDir, scadFile, outputFile string, configFiles
 	cmd := exec.Command("openscad", "-o", outputFile, scadFileName)
 	cmd.Dir = workDir
 
-	// Only show output in verbose mode, otherwise suppress it
-	if ui.IsVerbose() {
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-	} else {
-		cmd.Stdout = io.Discard
-		cmd.Stderr = io.Discard
-	}
-
-	if err := cmd.Run(); err != nil {
+	if err := runOpenSCAD(cmd, scadFile); err != nil {
 		return fmt.Errorf("failed to render %s with config files: %w", scadFile, err)
 	}
 	return nil

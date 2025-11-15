@@ -1,0 +1,101 @@
+# Configuration Formats Demo
+# This example demonstrates both the old and new config formats for SCAD files
+
+output: config_formats_demo.3mf
+packing_distance: 10.0
+
+objects:
+  # Example 1: New map-based format (recommended)
+  # This is more concise and easier to read
+  - name: NewFormatExample
+    parts:
+      - name: holder
+        file: a.scad
+        filament: 1
+        config:
+          - cfg.scad:
+              h: 6
+              width: 38
+              length: 90
+              diameter: 16
+              distance: 48.5
+              nutDistance: 6
+              separation: 10
+              offset_l: -0.75
+              offset_r: 0.75
+
+  # Example 2: Old string-based format (still supported)
+  # Uses explicit SCAD function definitions
+  - name: OldFormatExample
+    parts:
+      - name: holder_legacy
+        file: a.scad
+        filament: 2
+        config:
+          - cfg.scad: |
+              function get_h() = 6;
+              function get_width() = 38;
+              function get_length() = 90;
+              function get_diameter() = 16;
+              function get_distance() = 48.5;
+              function get_nutDistance() = 6;
+              function get_separation() = 10;
+              function get_offset_l() = -0.75;
+              function get_offset_r() = 0.75;
+
+  # Example 3: Mixed formats in the same object
+  # Object-level config uses old format, part-level uses new format
+  - name: MixedFormatExample
+    config:
+      - global.scad: |
+          // Global configuration using old format
+          function global_scale() = 1.0;
+          function global_thickness() = 2.0;
+    parts:
+      - name: custom_part
+        file: a.scad
+        filament: 3
+        config:
+          - cfg.scad:
+              # Part-specific config using new format
+              h: 8
+              width: 50
+              diameter: 20
+
+  # Example 4: Different data types in new format
+  - name: DataTypesExample
+    parts:
+      - name: example_with_types
+        file: a.scad
+        filament: 4
+        config:
+          - cfg.scad:
+              # Integer values
+              count: 5
+              layers: 3
+
+              # Float values
+              height: 12.5
+              tolerance: 0.2
+              angle: 45.0
+
+              # Negative numbers
+              offset_x: -2.5
+              offset_y: 1.5
+
+              # String values (will be quoted in SCAD)
+              label: "Demo Part"
+              color: "blue"
+
+              # Boolean values
+              rounded: true
+              hollow: false
+
+# Notes:
+# ------
+# 1. When using maps the configuration is automatically converted to OpenSCAD functions:
+#    Example: h: 6  →  function get_h() = 6;
+# 2. Values are automatically formatted based on type:
+#    - Numbers: Used as-is (6, 48.5, -0.75)
+#    - Strings: Automatically quoted ("Demo Part")
+#    - Booleans: Converted to SCAD true/false

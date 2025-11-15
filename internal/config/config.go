@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/philipparndt/go3mf/internal/models"
 	"gopkg.in/yaml.v3"
@@ -105,6 +106,65 @@ func (l *Loader) Validate(config *models.YamlConfig, configPath string) error {
 	return nil
 }
 
+// convertMapToScadFunctions converts a map of key-value pairs to SCAD function definitions
+// Example: {"h": 6, "width": 38} -> "function get_h() = 6;\nfunction get_width() = 38;\n"
+func convertMapToScadFunctions(configMap map[string]interface{}) string {
+	var builder strings.Builder
+
+	for key, value := range configMap {
+		builder.WriteString(fmt.Sprintf("function get_%s() = ", key))
+
+		// Format the value based on its type
+		switch v := value.(type) {
+		case string:
+			// String values need to be quoted
+			builder.WriteString(fmt.Sprintf("\"%s\"", v))
+		case int, int8, int16, int32, int64:
+			builder.WriteString(fmt.Sprintf("%d", v))
+		case float32, float64:
+			builder.WriteString(fmt.Sprintf("%g", v))
+		case bool:
+			if v {
+				builder.WriteString("true")
+			} else {
+				builder.WriteString("false")
+			}
+		default:
+			// For any other type, use fmt.Sprintf which should handle most cases
+			builder.WriteString(fmt.Sprintf("%v", v))
+		}
+
+		builder.WriteString(";\n")
+	}
+
+	return builder.String()
+}
+
+// convertConfigContent converts a config value to a SCAD string
+// Handles both old format (string) and new format (map)
+func convertConfigContent(content interface{}) string {
+	switch v := content.(type) {
+	case string:
+		// Direct string content (old format)
+		return v
+	case map[string]interface{}:
+		// Map format (new format) - convert to SCAD functions
+		return convertMapToScadFunctions(v)
+	case map[interface{}]interface{}:
+		// YAML might parse it as map[interface{}]interface{}, convert it
+		converted := make(map[string]interface{})
+		for k, val := range v {
+			if strKey, ok := k.(string); ok {
+				converted[strKey] = val
+			}
+		}
+		return convertMapToScadFunctions(converted)
+	default:
+		// Fallback: treat as string
+		return fmt.Sprintf("%v", v)
+	}
+}
+
 // ConvertToScadFiles converts YAML config to ScadFile list for backward compatibility
 func (l *Loader) ConvertToScadFiles(config *models.YamlConfig) []models.ScadFile {
 	var scadFiles []models.ScadFile
@@ -124,14 +184,14 @@ func (l *Loader) ConvertToScadFiles(config *models.YamlConfig) []models.ScadFile
 			// Start with object-level configs
 			for _, configMap := range obj.Config {
 				for filename, content := range configMap {
-					configFiles[filename] = content
+					configFiles[filename] = convertConfigContent(content)
 				}
 			}
 
 			// Override with part-level configs
 			for _, configMap := range part.Config {
 				for filename, content := range configMap {
-					configFiles[filename] = content
+					configFiles[filename] = convertConfigContent(content)
 				}
 			}
 

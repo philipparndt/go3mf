@@ -140,17 +140,17 @@ type YamlConfig struct {
 
 // YamlObject represents a single object in the model
 type YamlObject struct {
-	Name   string              `yaml:"name"`
-	Config []map[string]string `yaml:"config,omitempty"` // Array of config filename -> content maps (applied to all parts)
-	Parts  []YamlPart          `yaml:"parts"`
+	Name   string                 `yaml:"name"`
+	Config []map[string]interface{} `yaml:"config,omitempty"` // Array of config filename -> content maps (applied to all parts)
+	Parts  []YamlPart             `yaml:"parts"`
 }
 
 // YamlPart represents a part within an object
 type YamlPart struct {
-	Name     string              `yaml:"name"`
-	File     string              `yaml:"file"`
-	Config   []map[string]string `yaml:"config,omitempty"`   // Array of config filename -> content maps (part-specific)
-	Filament int                 `yaml:"filament,omitempty"` // 1-4 for AMS slots, 0 for auto-assign
+	Name     string                 `yaml:"name"`
+	File     string                 `yaml:"file"`
+	Config   []map[string]interface{} `yaml:"config,omitempty"`   // Array of config filename -> content maps (part-specific)
+	Filament int                    `yaml:"filament,omitempty"` // 1-4 for AMS slots, 0 for auto-assign
 }
 
 // ModelSettings represents the Bambu Studio model_settings.config structure

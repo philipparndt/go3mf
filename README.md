@@ -10,7 +10,7 @@ brew install philipparndt/go3mf/go3mf
 
 ## Commands
 
-### combine
+### combine (alias: build)
 
 Combine files into a single 3MF file. This command intelligently handles different file types:
 - **YAML config files** - Use structured configuration for complex multi-object models
@@ -20,11 +20,15 @@ Combine files into a single 3MF file. This command intelligently handles differe
 
 ```bash
 go3mf combine [OPTIONS] <files...>
+# or use the 'build' alias
+go3mf build [OPTIONS] <files...>
 ```
 
 **Options:**
 - `-o, --output` - Output file path (default: "combined.3mf")
 - `--object` - Define an object group for SCAD files (can be repeated)
+
+**Note:** The `build` command is an alias for `combine` and works identically.
 
 ---
 

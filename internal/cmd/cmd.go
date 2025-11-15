@@ -16,6 +16,7 @@ import (
 
 type CLI struct {
 	Combine    *CombineCmd    `cmd:"" help:"Combine files into single 3MF (supports YAML, SCAD, 3MF, STL)"`
+	Build      *CombineCmd    `cmd:"" help:"Alias for 'combine' - build files into single 3MF (supports YAML, SCAD, 3MF, STL)" aliases:"build"`
 	Inspect    *InspectCmd    `cmd:"" help:"Inspect a 3MF file and show its contents"`
 	Version    *VersionCmd    `cmd:"" help:"Show version information"`
 	Completion *CompletionCmd `cmd:"" help:"Generate shell completion script"`
@@ -131,8 +132,8 @@ func parseObjectGroupsFromRawArgs(args []string) ([]buildplan.ObjectGroup, error
 	for i < len(args) {
 		arg := args[i]
 
-		// Wait until we're in the combine command
-		if arg == "combine" {
+		// Wait until we're in the combine or build command
+		if arg == "combine" || arg == "build" {
 			inCombineCmd = true
 			i++
 			continue

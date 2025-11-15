@@ -10,7 +10,7 @@ brew install philipparndt/go3mf/go3mf
 
 ## Commands
 
-### combine
+### combine (alias: build)
 
 Combine files into a single 3MF file. This command intelligently handles different file types:
 - **YAML config files** - Use structured configuration for complex multi-object models
@@ -20,11 +20,15 @@ Combine files into a single 3MF file. This command intelligently handles differe
 
 ```bash
 go3mf combine [OPTIONS] <files...>
+# or use the 'build' alias
+go3mf build [OPTIONS] <files...>
 ```
 
 **Options:**
 - `-o, --output` - Output file path (default: "combined.3mf")
 - `--object` - Define an object group for SCAD files (can be repeated)
+
+**Note:** The `build` command is an alias for `combine` and works identically.
 
 ---
 
@@ -67,10 +71,59 @@ objects:
 - `output` - Output 3MF file path (required)
 - `objects` - Array of objects (required, at least one)
   - `name` - Object name (required)
+  - `config` - Array of config files (optional, can be at object or part level)
   - `parts` - Array of parts in the object (required, at least one)
     - `name` - Part name (required)
     - `file` - Path to SCAD file, relative to config or absolute (required)
     - `filament` - AMS filament slot: 0=auto, 1-4=specific slot (optional)
+    - `config` - Array of config files for this part (optional)
+
+**SCAD Configuration Files:**
+
+You can pass configuration values to OpenSCAD files using config sections. Two formats are supported:
+
+**New Map-Based Format (Recommended):**
+```yaml
+objects:
+  - name: Holder
+    parts:
+      - name: custom_holder
+        file: holder.scad
+        config:
+          - cfg.scad:
+              h: 6
+              width: 38
+              length: 90
+              diameter: 16.5
+              name: "Custom Holder"
+              rounded: true
+```
+
+This automatically generates SCAD functions:
+```openscad
+function get_h() = 6;
+function get_width() = 38;
+function get_length() = 90;
+function get_diameter() = 16.5;
+function get_name() = "Custom Holder";
+function get_rounded() = true;
+```
+
+**Old String Format (Still Supported):**
+```yaml
+config:
+  - cfg.scad: |
+      function get_h() = 6;
+      function get_width() = 38;
+      function get_length() = 90;
+```
+
+**Config Features:**
+- Supports integers, floats, strings, and booleans
+- Strings are automatically quoted
+- Object-level config applies to all parts
+- Part-level config overrides object-level config
+- Both formats can be mixed in the same file
 
 **Benefits:**
 - Organize complex models with multiple objects and parts
@@ -78,17 +131,24 @@ objects:
 - Clear structure for multi-color prints with AMS
 - File paths relative to config file for portability
 - Version control friendly
+- Parameterize SCAD files with clean config syntax
 
-**Example:**
+**Examples:**
 ```bash
 # Use the example configuration
-go3mf combine-yaml example/config.yaml
+go3mf combine example/config.yaml
 
-# Create your own config and use it
-go3mf combine-yaml my-project/build-config.yaml
+# You can also use the 'build' alias
+go3mf build example/config.yaml
+
+# Example with SCAD config files
+go3mf combine example/plate-config.yaml
+
+# Complete config formats demo
+go3mf build example/config-formats-demo.yaml
 ```
 
-See `example/config.yaml` for a complete example.
+See `example/config.yaml`, `example/plate-config.yaml`, and `example/config-formats-demo.yaml` for complete examples.
 
 ---
 

@@ -138,11 +138,14 @@ config:
 # Use the example configuration
 go3mf combine example/config.yaml
 
+# You can also use the 'build' alias
+go3mf build example/config.yaml
+
 # Example with SCAD config files
 go3mf combine example/plate-config.yaml
 
 # Complete config formats demo
-go3mf combine example/config-formats-demo.yaml
+go3mf build example/config-formats-demo.yaml
 ```
 
 See `example/config.yaml`, `example/plate-config.yaml`, and `example/config-formats-demo.yaml` for complete examples.

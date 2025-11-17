@@ -235,6 +235,16 @@ func (c *Combiner) CombineWithDistance(tempFiles []string, scadFiles []models.Sc
 			obj.ID = strconv.Itoa(i + 1)
 			obj.Name = scadFiles[i].Name
 			obj.UUID = "" // Will be set in components
+
+			// Set PID (Production ID) based on filament slot
+			filamentSlot := scadFiles[i].FilamentSlot
+			if filamentSlot == 0 {
+				// Auto-assign filament slot if not specified
+				filamentSlot = ((i % 4) + 1)
+			}
+			obj.PID = strconv.Itoa(filamentSlot)
+			obj.PIndex = "0"
+
 			allObjects = append(allObjects, obj)
 		}
 	}
@@ -329,6 +339,16 @@ func (c *Combiner) CombineWithGroupsAndDistance(tempFiles []string, scadFiles []
 			obj.ID = strconv.Itoa(nextID)
 			obj.Name = scadFiles[i].Name
 			obj.UUID = "" // Will be set in components
+
+			// Set PID (Production ID) based on filament slot
+			filamentSlot := scadFiles[i].FilamentSlot
+			if filamentSlot == 0 {
+				// Auto-assign filament slot if not specified
+				filamentSlot = ((i % 4) + 1)
+			}
+			obj.PID = strconv.Itoa(filamentSlot)
+			obj.PIndex = "0"
+
 			allMeshObjects = append(allMeshObjects, obj)
 			nextID++
 		}

@@ -84,8 +84,8 @@ type Components struct {
 
 type Component struct {
 	ObjectID  string `xml:"objectid,attr"`
-	UUID      string `xml:"p:UUID,attr,omitempty"`
-	Path      string `xml:"p:path,attr,omitempty"`
+	UUID      string `xml:"http://schemas.microsoft.com/3dmanufacturing/production/2015/06 UUID,attr,omitempty"`
+	Path      string `xml:"http://schemas.microsoft.com/3dmanufacturing/production/2015/06 path,attr,omitempty"`
 	Transform string `xml:"transform,attr,omitempty"`
 }
 

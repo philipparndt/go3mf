@@ -5,3 +5,4 @@ go3mf
 *.3mf
 completions/
 dist/
+out/

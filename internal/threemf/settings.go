@@ -16,13 +16,14 @@ func WriteModelSettings(outZip *zip.Writer, objectGroups []models.ObjectGroup, b
 	var modelInstances []models.ModelInstance
 	var assembleItems []models.AssembleItem
 	partID := 1
+	sourceObjectID := 0
 
 	// Create settings object for each group
 	for _, group := range objectGroups {
 		var parts []models.Part
 		totalFaces := 0
 
-		for _, scadFile := range group.Parts {
+		for volumeIndex, scadFile := range group.Parts {
 			filamentSlot := scadFile.FilamentSlot
 			if filamentSlot == 0 {
 				filamentSlot = ((partID - 1) % 4) + 1
@@ -31,23 +32,34 @@ func WriteModelSettings(outZip *zip.Writer, objectGroups []models.ObjectGroup, b
 			faceCount := 12 // Placeholder - would need actual mesh analysis
 			totalFaces += faceCount
 
+			// Build metadata list
+			metadata := []models.SettingsMetadata{
+				{Key: "name", Value: scadFile.Name},
+				{Key: "matrix", Value: "1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"},
+				{Key: "source_file", Value: "combined.3mf"},
+				{Key: "source_object_id", Value: strconv.Itoa(sourceObjectID)},
+				{Key: "source_volume_id", Value: strconv.Itoa(volumeIndex)},
+			}
+
+			// Only add extruder metadata if not using default filament (1)
+			if filamentSlot != 1 {
+				metadata = append(metadata, models.SettingsMetadata{
+					Key:   "extruder",
+					Value: strconv.Itoa(filamentSlot),
+				})
+			}
+
 			parts = append(parts, models.Part{
-				ID:      strconv.Itoa(partID),
-				Subtype: "normal_part",
-				Metadata: []models.SettingsMetadata{
-					{Key: "name", Value: scadFile.Name},
-					{Key: "matrix", Value: "1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"},
-					{Key: "source_file", Value: "combined.3mf"},
-					{Key: "source_object_id", Value: strconv.Itoa(partID - 1)},
-					{Key: "source_volume_id", Value: "0"},
-					{Key: "extruder", Value: strconv.Itoa(filamentSlot)},
-				},
+				ID:       strconv.Itoa(partID),
+				Subtype:  "normal_part",
+				Metadata: metadata,
 				MeshStat: models.MeshStat{
 					FaceCount: faceCount,
 				},
 			})
 			partID++
 		}
+		sourceObjectID++
 
 		settingsObjects = append(settingsObjects, models.SettingsObject{
 			ID: group.ID,

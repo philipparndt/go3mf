@@ -9,6 +9,7 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/philipparndt/go3mf/internal/buildplan"
+	"github.com/philipparndt/go3mf/internal/extract"
 	"github.com/philipparndt/go3mf/internal/inspect"
 	"github.com/philipparndt/go3mf/internal/ui"
 	"github.com/philipparndt/go3mf/version"
@@ -18,6 +19,7 @@ type CLI struct {
 	Combine    *CombineCmd    `cmd:"" help:"Combine files into single 3MF (supports YAML, SCAD, 3MF, STL)"`
 	Build      *CombineCmd    `cmd:"" help:"Alias for 'combine' - build files into single 3MF (supports YAML, SCAD, 3MF, STL)" aliases:"build"`
 	Inspect    *InspectCmd    `cmd:"" help:"Inspect a 3MF file and show its contents"`
+	Extract    *ExtractCmd    `cmd:"" help:"Extract 3D models from a 3MF file as STL files"`
 	Version    *VersionCmd    `cmd:"" help:"Show version information"`
 	Completion *CompletionCmd `cmd:"" help:"Generate shell completion script"`
 }
@@ -251,6 +253,17 @@ type InspectCmd struct {
 func (c *InspectCmd) Run() error {
 	inspector := inspect.NewInspector()
 	return inspector.Inspect(c.File)
+}
+
+type ExtractCmd struct {
+	File      string `arg:"" help:"3MF file to extract models from"`
+	OutputDir string `help:"Output directory for STL files (default: current directory)" short:"o" default:"."`
+	Binary    bool   `help:"Output binary STL files instead of ASCII" short:"b"`
+}
+
+func (c *ExtractCmd) Run() error {
+	extractor := extract.NewExtractor()
+	return extractor.Extract(c.File, c.OutputDir, c.Binary)
 }
 
 type VersionCmd struct{}

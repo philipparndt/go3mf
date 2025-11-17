@@ -313,3 +313,93 @@ func (c *Converter) buildMeshXML(mesh *Mesh) (string, string) {
 
 	return verticesBuf.String(), trianglesBuf.String()
 }
+
+// Writer writes STL files
+type Writer struct{}
+
+// NewWriter creates a new STL writer
+func NewWriter() *Writer {
+	return &Writer{}
+}
+
+// WriteBinary writes a mesh to a binary STL file
+func (w *Writer) WriteBinary(mesh *Mesh, filename string) error {
+	file, err := os.Create(filename)
+	if err != nil {
+		return fmt.Errorf("error creating file: %w", err)
+	}
+	defer file.Close()
+
+	// Write 80-byte header
+	header := make([]byte, 80)
+	copy(header, []byte(fmt.Sprintf("Binary STL exported from %s", mesh.Name)))
+	if _, err := file.Write(header); err != nil {
+		return fmt.Errorf("error writing header: %w", err)
+	}
+
+	// Write triangle count
+	triangleCount := uint32(len(mesh.Triangles))
+	if err := binary.Write(file, binary.LittleEndian, triangleCount); err != nil {
+		return fmt.Errorf("error writing triangle count: %w", err)
+	}
+
+	// Write triangles
+	for _, triangle := range mesh.Triangles {
+		// Write normal
+		if err := binary.Write(file, binary.LittleEndian, triangle.Normal); err != nil {
+			return fmt.Errorf("error writing normal: %w", err)
+		}
+
+		// Write vertices
+		if err := binary.Write(file, binary.LittleEndian, triangle.V1); err != nil {
+			return fmt.Errorf("error writing vertex 1: %w", err)
+		}
+		if err := binary.Write(file, binary.LittleEndian, triangle.V2); err != nil {
+			return fmt.Errorf("error writing vertex 2: %w", err)
+		}
+		if err := binary.Write(file, binary.LittleEndian, triangle.V3); err != nil {
+			return fmt.Errorf("error writing vertex 3: %w", err)
+		}
+
+		// Write attribute byte count (0)
+		var attributeCount uint16 = 0
+		if err := binary.Write(file, binary.LittleEndian, attributeCount); err != nil {
+			return fmt.Errorf("error writing attribute count: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// WriteASCII writes a mesh to an ASCII STL file
+func (w *Writer) WriteASCII(mesh *Mesh, filename string) error {
+	file, err := os.Create(filename)
+	if err != nil {
+		return fmt.Errorf("error creating file: %w", err)
+	}
+	defer file.Close()
+
+	writer := bufio.NewWriter(file)
+
+	// Write header
+	fmt.Fprintf(writer, "solid %s\n", mesh.Name)
+
+	// Write triangles
+	for _, triangle := range mesh.Triangles {
+		fmt.Fprintf(writer, "  facet normal %e %e %e\n",
+			triangle.Normal.X, triangle.Normal.Y, triangle.Normal.Z)
+		fmt.Fprintf(writer, "    outer loop\n")
+		fmt.Fprintf(writer, "      vertex %e %e %e\n",
+			triangle.V1.X, triangle.V1.Y, triangle.V1.Z)
+		fmt.Fprintf(writer, "      vertex %e %e %e\n",
+			triangle.V2.X, triangle.V2.Y, triangle.V2.Z)
+		fmt.Fprintf(writer, "      vertex %e %e %e\n",
+			triangle.V3.X, triangle.V3.Y, triangle.V3.Z)
+		fmt.Fprintf(writer, "    endloop\n")
+		fmt.Fprintf(writer, "  endfacet\n")
+	}
+
+	fmt.Fprintf(writer, "endsolid %s\n", mesh.Name)
+
+	return writer.Flush()
+}

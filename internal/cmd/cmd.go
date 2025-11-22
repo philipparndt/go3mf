@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/alecthomas/kong"
+	"github.com/charmbracelet/huh"
 	"github.com/philipparndt/go3mf/internal/buildplan"
 	"github.com/philipparndt/go3mf/internal/extract"
 	"github.com/philipparndt/go3mf/internal/inspect"
@@ -284,22 +285,32 @@ func (c *InitCmd) Run() error {
 		os.Exit(1)
 	}
 
-	// Ask the user if files should be separate parts or separate objects
-	fmt.Println("How should the files be organized?")
-	fmt.Println("1) Separate parts (all files in one object)")
-	fmt.Println("2) Separate objects (each file is a separate object)")
-	fmt.Print("\nEnter your choice (1 or 2): ")
+	ui.PrintTitle("go3mf Init")
+	ui.PrintHeader("Configuration Setup")
 
-	var choice string
-	fmt.Scanln(&choice)
+	ui.PrintInfo(fmt.Sprintf("Creating configuration from %d file(s)", len(c.Files)))
+	fmt.Println()
+
+	// Ask the user if files should be separate parts or separate objects
+	var organizationType string
+	err := huh.NewSelect[string]().
+		Title("How should the files be organized?").
+		Options(
+			huh.NewOption("Separate parts (all files in one object)", "parts"),
+			huh.NewOption("Separate objects (each file is a separate object)", "objects"),
+		).
+		Value(&organizationType).
+		Run()
+
+	if err != nil {
+		return fmt.Errorf("selection cancelled: %w", err)
+	}
 
 	var yamlContent string
-	if choice == "1" {
+	if organizationType == "parts" {
 		yamlContent = generateSeparatePartsYAML(c.Files, c.Output)
-	} else if choice == "2" {
-		yamlContent = generateSeparateObjectsYAML(c.Files, c.Output)
 	} else {
-		return fmt.Errorf("invalid choice. Please enter 1 or 2")
+		yamlContent = generateSeparateObjectsYAML(c.Files, c.Output)
 	}
 
 	// Write the YAML file
@@ -307,13 +318,19 @@ func (c *InitCmd) Run() error {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
-	fmt.Printf("\n✓ Configuration file created: %s\n", c.Output)
-	fmt.Println("\nYou can now edit the file to customize:")
-	fmt.Println("  - Part/object names")
-	fmt.Println("  - Filament assignments (AMS slots)")
-	fmt.Println("  - Packing distance")
-	fmt.Println("  - Config files for OpenSCAD variables")
-	fmt.Printf("\nTo build the 3MF file, run:\n  go3mf combine %s\n", c.Output)
+	fmt.Println()
+	ui.PrintSuccess(fmt.Sprintf("Configuration file created: %s", c.Output))
+	fmt.Println()
+
+	ui.PrintHeader("Next Steps")
+	ui.PrintStep("Customize your configuration:")
+	ui.PrintItem("Part/object names")
+	ui.PrintItem("Filament assignments (AMS slots)")
+	ui.PrintItem("Packing distance")
+	ui.PrintItem("Config files for OpenSCAD variables")
+	fmt.Println()
+
+	ui.PrintBox(fmt.Sprintf("go3mf build %s --open", c.Output))
 
 	return nil
 }

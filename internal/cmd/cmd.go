@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -18,6 +19,7 @@ import (
 type CLI struct {
 	Combine    *CombineCmd    `cmd:"" help:"Combine files into single 3MF (supports YAML, SCAD, 3MF, STL)"`
 	Build      *CombineCmd    `cmd:"" help:"Alias for 'combine' - build files into single 3MF (supports YAML, SCAD, 3MF, STL)" aliases:"build"`
+	Init       *InitCmd       `cmd:"" help:"Generate a default YAML configuration file from input files"`
 	Inspect    *InspectCmd    `cmd:"" help:"Inspect a 3MF file and show its contents"`
 	Extract    *ExtractCmd    `cmd:"" help:"Extract 3D models from a 3MF file as STL files"`
 	Version    *VersionCmd    `cmd:"" help:"Show version information"`
@@ -264,6 +266,112 @@ type ExtractCmd struct {
 func (c *ExtractCmd) Run() error {
 	extractor := extract.NewExtractor()
 	return extractor.Extract(c.File, c.OutputDir, c.Binary)
+}
+
+type InitCmd struct {
+	Output string   `help:"Output YAML file path (default: config.yaml)" short:"o" default:"config.yaml"`
+	Files  []string `arg:"" help:"Files to include in the configuration"`
+}
+
+func (c *InitCmd) Run() error {
+	if len(c.Files) == 0 {
+		return fmt.Errorf("at least one file must be specified")
+	}
+
+	// Check if output file already exists
+	if _, err := os.Stat(c.Output); err == nil {
+		ui.PrintError(fmt.Sprintf("File %s already exists. Please remove it or specify a different output file with -o", c.Output))
+		os.Exit(1)
+	}
+
+	// Ask the user if files should be separate parts or separate objects
+	fmt.Println("How should the files be organized?")
+	fmt.Println("1) Separate parts (all files in one object)")
+	fmt.Println("2) Separate objects (each file is a separate object)")
+	fmt.Print("\nEnter your choice (1 or 2): ")
+
+	var choice string
+	fmt.Scanln(&choice)
+
+	var yamlContent string
+	if choice == "1" {
+		yamlContent = generateSeparatePartsYAML(c.Files, c.Output)
+	} else if choice == "2" {
+		yamlContent = generateSeparateObjectsYAML(c.Files, c.Output)
+	} else {
+		return fmt.Errorf("invalid choice. Please enter 1 or 2")
+	}
+
+	// Write the YAML file
+	if err := os.WriteFile(c.Output, []byte(yamlContent), 0644); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	fmt.Printf("\n✓ Configuration file created: %s\n", c.Output)
+	fmt.Println("\nYou can now edit the file to customize:")
+	fmt.Println("  - Part/object names")
+	fmt.Println("  - Filament assignments (AMS slots)")
+	fmt.Println("  - Packing distance")
+	fmt.Println("  - Config files for OpenSCAD variables")
+	fmt.Printf("\nTo build the 3MF file, run:\n  go3mf combine %s\n", c.Output)
+
+	return nil
+}
+
+// generateSeparatePartsYAML generates a YAML config with all files as parts in one object
+func generateSeparatePartsYAML(files []string, outputPath string) string {
+	var builder strings.Builder
+
+	// Determine output 3MF filename from config filename
+	baseOutput := strings.TrimSuffix(outputPath, filepath.Ext(outputPath))
+	threemfOutput := baseOutput + ".3mf"
+
+	builder.WriteString("# Generated configuration file\n")
+	builder.WriteString("# All files are organized as separate parts within a single object\n\n")
+	builder.WriteString(fmt.Sprintf("output: %s\n\n", threemfOutput))
+	builder.WriteString("# Packing distance between objects in mm (default: 10.0)\n")
+	builder.WriteString("packing_distance: 10.0\n\n")
+	builder.WriteString("objects:\n")
+	builder.WriteString("  - name: Combined\n")
+	builder.WriteString("    parts:\n")
+
+	for _, file := range files {
+		partName := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
+		builder.WriteString(fmt.Sprintf("      - name: %s\n", partName))
+		builder.WriteString(fmt.Sprintf("        file: %s\n", file))
+		builder.WriteString("        # filament: 1  # Uncomment to assign to specific AMS slot (1-4)\n")
+		builder.WriteString("\n")
+	}
+
+	return builder.String()
+}
+
+// generateSeparateObjectsYAML generates a YAML config with each file as a separate object
+func generateSeparateObjectsYAML(files []string, outputPath string) string {
+	var builder strings.Builder
+
+	// Determine output 3MF filename from config filename
+	baseOutput := strings.TrimSuffix(outputPath, filepath.Ext(outputPath))
+	threemfOutput := baseOutput + ".3mf"
+
+	builder.WriteString("# Generated configuration file\n")
+	builder.WriteString("# Each file is organized as a separate object\n\n")
+	builder.WriteString(fmt.Sprintf("output: %s\n\n", threemfOutput))
+	builder.WriteString("# Packing distance between objects in mm (default: 10.0)\n")
+	builder.WriteString("packing_distance: 10.0\n\n")
+	builder.WriteString("objects:\n")
+
+	for _, file := range files {
+		objectName := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
+		builder.WriteString(fmt.Sprintf("  - name: %s\n", objectName))
+		builder.WriteString("    parts:\n")
+		builder.WriteString("      - name: main\n")
+		builder.WriteString(fmt.Sprintf("        file: %s\n", file))
+		builder.WriteString("        # filament: 1  # Uncomment to assign to specific AMS slot (1-4)\n")
+		builder.WriteString("\n")
+	}
+
+	return builder.String()
 }
 
 type VersionCmd struct{}

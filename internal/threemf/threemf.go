@@ -256,8 +256,11 @@ func (c *Combiner) CombineWithDistance(tempFiles []string, scadFiles []models.Sc
 	currentXOffset := 0.0
 
 	for i := range allObjects {
-		// Position objects along the X axis with spacing
-		transform := fmt.Sprintf("1 0 0 0 1 0 0 0 1 %.2f 0 0", currentXOffset)
+		// Position objects along the X axis with spacing and apply rotation
+		scadFile := scadFiles[i]
+		transform := geometry.BuildRotationTransform(
+			scadFile.RotationX, scadFile.RotationY, scadFile.RotationZ,
+			currentXOffset, 0, 0)
 
 		components = append(components, models.Component{
 			ObjectID:  strconv.Itoa(i + 1),
@@ -322,8 +325,30 @@ func (c *Combiner) CombineWithGroups(tempFiles []string, scadFiles []models.Scad
 	return nil
 }
 
+// CombineWithObjectGroups combines multiple 3MF files with ObjectGroup metadata including normalization settings
+func (c *Combiner) CombineWithObjectGroups(tempFiles []string, objectGroups []models.ObjectGroup, outputFile string, packingDistance float64, algorithm models.PackingAlgorithm) error {
+	// Flatten object groups into scadFiles for compatibility
+	var scadFiles []models.ScadFile
+	objectGroupMap := make(map[string]bool) // map object name -> normalize_position
+
+	for _, group := range objectGroups {
+		for _, part := range group.Parts {
+			scadFiles = append(scadFiles, part)
+			// Store the normalize_position setting for this object
+			objectGroupMap[group.Name] = group.NormalizePosition
+		}
+	}
+
+	return c.combineWithGroupsAndDistanceInternal(tempFiles, scadFiles, objectGroups, outputFile, packingDistance, algorithm)
+}
+
 // CombineWithGroupsAndDistance combines multiple 3MF files with grouping and configurable packing distance
 func (c *Combiner) CombineWithGroupsAndDistance(tempFiles []string, scadFiles []models.ScadFile, outputFile string, packingDistance float64, algorithm models.PackingAlgorithm) error {
+	// When ObjectGroups are not provided, create default ones with normalize_position=true
+	return c.combineWithGroupsAndDistanceInternal(tempFiles, scadFiles, nil, outputFile, packingDistance, algorithm)
+}
+
+func (c *Combiner) combineWithGroupsAndDistanceInternal(tempFiles []string, scadFiles []models.ScadFile, objectGroups []models.ObjectGroup, outputFile string, packingDistance float64, algorithm models.PackingAlgorithm) error {
 	var allMeshObjects []models.Object
 	nextID := 1
 
@@ -355,8 +380,8 @@ func (c *Combiner) CombineWithGroupsAndDistance(tempFiles []string, scadFiles []
 	}
 
 	// Group mesh objects by their base object name (before the '/')
-	objectGroups := make(map[string][]int) // object name -> list of mesh object IDs
-	objectOrder := []string{}              // preserve order of objects
+	objectGroupsMap := make(map[string][]int) // object name -> list of mesh object IDs
+	objectOrder := []string{}                 // preserve order of objects
 
 	for i, scadFile := range scadFiles {
 		// Extract object name (part before '/')
@@ -369,12 +394,12 @@ func (c *Combiner) CombineWithGroupsAndDistance(tempFiles []string, scadFiles []
 		}
 
 		// Track first occurrence for ordering
-		if _, exists := objectGroups[objectName]; !exists {
+		if _, exists := objectGroupsMap[objectName]; !exists {
 			objectOrder = append(objectOrder, objectName)
 		}
 
 		// Map object name to mesh object ID (1-based)
-		objectGroups[objectName] = append(objectGroups[objectName], i+1)
+		objectGroupsMap[objectName] = append(objectGroupsMap[objectName], i+1)
 	}
 
 	// Create parent objects for each group
@@ -394,7 +419,7 @@ func (c *Combiner) CombineWithGroupsAndDistance(tempFiles []string, scadFiles []
 
 	packingID := 0
 	for _, objectName := range objectOrder {
-		meshIDs := objectGroups[objectName]
+		meshIDs := objectGroupsMap[objectName]
 
 		// Calculate bounding box for this group of objects
 		var groupObjects []models.Object
@@ -463,11 +488,51 @@ func (c *Combiner) CombineWithGroupsAndDistance(tempFiles []string, scadFiles []
 		objectName := info.objectName
 		groupScadFiles := info.scadFiles
 
-		buildTransform := fmt.Sprintf("1 0 0 0 1 0 0 0 1 %.2f %.2f 0", result.X, result.Y)
+		// Determine if we should normalize position
+		normalizePosition := true // default to true
+		if objectGroups != nil {
+			// Look up the normalize_position setting from objectGroups
+			for _, og := range objectGroups {
+				if og.Name == objectName {
+					normalizePosition = og.NormalizePosition
+					break
+				}
+			}
+		}
+
+		// Calculate z-offset for normalization if needed
+		var zOffset float64 = 0
+		if normalizePosition {
+			// For single-part objects
+			if len(meshIDs) == 1 {
+				zOffset = geometry.CalculateGroupZOffset([]models.Object{info.groupObjects[0]})
+			} else {
+				// For multi-part objects, calculate transforms first then get z-offset
+				var transforms []string
+				for i := range info.groupObjects {
+					scadFile := groupScadFiles[i]
+					transform := geometry.BuildRotationTransform(
+						scadFile.RotationX, scadFile.RotationY, scadFile.RotationZ,
+						scadFile.PositionX, scadFile.PositionY, scadFile.PositionZ)
+					transforms = append(transforms, transform)
+				}
+				zOffset = geometry.CalculateZOffsetWithTransforms(info.groupObjects, transforms)
+			}
+		}
+
+		// Build transform for positioning on the build plate
+		buildTransform := geometry.BuildTranslationTransform(result.X, result.Y, zOffset)
 
 		// If only one part in this object, add it directly to build
 		if len(meshIDs) == 1 {
 			objectID := strconv.Itoa(meshIDs[0])
+
+			// Apply rotation and position offsets from ScadFile to the build transform
+			scadFile := groupScadFiles[0]
+			buildTransform = geometry.BuildRotationTransform(
+				scadFile.RotationX, scadFile.RotationY, scadFile.RotationZ,
+				result.X+scadFile.PositionX, result.Y+scadFile.PositionY, zOffset+scadFile.PositionZ)
+
 			buildItems = append(buildItems, models.Item{
 				ObjectID:  objectID,
 				Transform: buildTransform,
@@ -476,18 +541,22 @@ func (c *Combiner) CombineWithGroupsAndDistance(tempFiles []string, scadFiles []
 
 			// Add to settings groups
 			settingsGroups = append(settingsGroups, models.ObjectGroup{
-				ID:    objectID,
-				Name:  objectName,
-				Parts: groupScadFiles,
+				ID:                objectID,
+				Name:              objectName,
+				Parts:             groupScadFiles,
+				NormalizePosition: normalizePosition,
 			})
 		} else {
 			// Create a parent object with multiple components
-			// Parts within an object should be at the same position (no spacing)
+			// Parts within an object maintain their relative positions
 			var components []models.Component
 
-			for _, meshID := range meshIDs {
-				// All parts at the same position - they will be combined
-				transform := "1 0 0 0 1 0 0 0 1 0 0 0"
+			for i, meshID := range meshIDs {
+				// Apply rotation and position offsets from ScadFile to each component
+				scadFile := groupScadFiles[i]
+				transform := geometry.BuildRotationTransform(
+					scadFile.RotationX, scadFile.RotationY, scadFile.RotationZ,
+					scadFile.PositionX, scadFile.PositionY, scadFile.PositionZ)
 
 				components = append(components, models.Component{
 					ObjectID:  strconv.Itoa(meshID),
@@ -517,9 +586,10 @@ func (c *Combiner) CombineWithGroupsAndDistance(tempFiles []string, scadFiles []
 
 			// Add to settings groups
 			settingsGroups = append(settingsGroups, models.ObjectGroup{
-				ID:    parentID,
-				Name:  objectName,
-				Parts: groupScadFiles,
+				ID:                parentID,
+				Name:              objectName,
+				Parts:             groupScadFiles,
+				NormalizePosition: normalizePosition,
 			})
 		}
 	}

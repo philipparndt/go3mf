@@ -46,6 +46,9 @@ go3mf combine example/config.yaml
 # Output file path (relative to config file or absolute)
 output: combined.3mf
 
+# Optional: distance between objects in mm (default: 10.0)
+packing_distance: 10.0
+
 # Define objects - each object groups related parts
 objects:
   # Single-part object
@@ -54,6 +57,7 @@ objects:
       - name: platform
         file: base.scad
         filament: 1  # Optional: 1-4 for AMS slots, 0 or omit for auto
+        rotation_z: 45  # Optional: rotate 45° around Z axis
 
   # Multi-part object
   - name: Assembly
@@ -61,7 +65,8 @@ objects:
       - name: main_body
         file: body.scad
         filament: 2
-      
+        rotation_x: 90  # Optional: rotate 90° around X axis
+
       - name: cover
         file: cover.scad
         filament: 3
@@ -69,13 +74,22 @@ objects:
 
 **Configuration Fields:**
 - `output` - Output 3MF file path (required)
+- `packing_distance` - Distance between objects in mm (optional, default: 10.0)
+- `packing_algorithm` - Packing algorithm: "default" or "compact" (optional, default: "default")
 - `objects` - Array of objects (required, at least one)
   - `name` - Object name (required)
+  - `normalize_position` - Place object at ground level (optional, default: true)
   - `config` - Array of config files (optional, can be at object or part level)
   - `parts` - Array of parts in the object (required, at least one)
     - `name` - Part name (required)
     - `file` - Path to SCAD file, relative to config or absolute (required)
     - `filament` - AMS filament slot: 0=auto, 1-4=specific slot (optional)
+    - `rotation_x` - Rotation around X axis in degrees (optional, default: 0)
+    - `rotation_y` - Rotation around Y axis in degrees (optional, default: 0)
+    - `rotation_z` - Rotation around Z axis in degrees (optional, default: 0)
+    - `position_x` - Relative X position offset in mm (optional, default: 0)
+    - `position_y` - Relative Y position offset in mm (optional, default: 0)
+    - `position_z` - Relative Z position offset in mm (optional, default: 0)
     - `config` - Array of config files for this part (optional)
 
 **SCAD Configuration Files:**
@@ -148,7 +162,48 @@ go3mf combine example/plate-config.yaml
 go3mf build example/config-formats-demo.yaml
 ```
 
-See `example/config.yaml`, `example/plate-config.yaml`, and `example/config-formats-demo.yaml` for complete examples.
+**Position Normalization and Relative Positioning:**
+
+By default, objects are automatically placed at ground level (z=0) for easy printing. You can control this behavior and add relative positioning between parts:
+
+```yaml
+objects:
+  # Default: Object sits on ground level
+  - name: Part1
+    parts:
+      - name: main
+        file: part.scad
+
+  # Multi-part object with relative positioning
+  - name: Assembly
+    parts:
+      - name: base
+        file: base.scad
+        # Base at origin
+
+      - name: top
+        file: top.scad
+        position_z: 10  # 10mm above base
+
+      - name: side
+        file: side.scad
+        position_x: 15  # 15mm offset in X
+
+  # Disable normalization to keep original z-position
+  - name: FloatingPart
+    normalize_position: false
+    parts:
+      - name: part
+        file: floating.scad  # Keeps original z from model
+```
+
+**Position Features:**
+- `normalize_position` (default: true) - Automatically place objects at ground level
+- `position_x`, `position_y`, `position_z` - Relative offsets in mm for parts within an object
+- Parts in the same object maintain their relative positions
+- Positions are applied after rotations
+
+See `example/config.yaml`, `example/position-demo.yaml`, `example/plate-config.yaml`, and `example/config-formats-demo.yaml` for complete examples.
 
 ---
 

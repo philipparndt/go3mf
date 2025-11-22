@@ -21,6 +21,10 @@ objects:
       - name: platform
         file: a.scad
         filament: 1  # Use AMS slot 1 (optional, 0 or omit for auto-assign)
+        # Optional: Rotate the part (in degrees)
+        # rotation_x: 0   # Rotation around X axis
+        # rotation_y: 0   # Rotation around Y axis
+        # rotation_z: 0   # Rotation around Z axis
 
   # Second object - a multi-part object with mixed config files
   - name: Assembly
@@ -36,10 +40,12 @@ objects:
           - cfg-main.scad: |
               function body_color() = "red";
               function body_scale() = 1.5;
-      
+
       - name: cover
         file: a.scad
         filament: 3  # Use AMS slot 3
+        # Optional: Position this part relative to main_body
+        # position_z: 5  # Offset 5mm above in Z direction
         config:
           - cfg-cover.scad: |
               function cover_thickness() = 2;
@@ -48,6 +54,15 @@ objects:
 # Notes:
 # - File paths can be relative to this YAML file or absolute
 # - Filament values: 0 or omitted = auto-assign, 1-4 = AMS slots
+# - Rotation values: rotation_x, rotation_y, rotation_z in degrees (optional, default: 0)
+#   - Rotations are applied in the order: Z, Y, X (intrinsic rotations)
+#   - Positive values rotate counter-clockwise when looking along the positive axis
+# - Position values: position_x, position_y, position_z in mm (optional, default: 0)
+#   - Relative offsets within an object
+#   - Parts in the same object maintain their relative positions
+# - Position normalization: normalize_position (optional, default: true)
+#   - true: Object is placed at ground level (z=0)
+#   - false: Object keeps its original z-position from the model
 # - Config files can be defined at object level (applied to all parts) or part level
 # - Part-level config files override object-level config files with the same name
 # - Multiple config files can be specified as an array of filename->content maps

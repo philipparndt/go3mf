@@ -9,8 +9,12 @@ objects:
     parts:
       - name: main
         file: a.scad
+        # Optional: Rotate around Z axis by 45 degrees
+        rotation_z: 45
 
   - name: PartB
     parts:
       - name: main
         file: b.scad
+        # Optional: Rotate around X axis by 90 degrees
+        rotation_x: 90

@@ -185,3 +185,51 @@ func parseTransform(transform string) (dx, dy, dz float64) {
 
 	return parts[9], parts[10], parts[11]
 }
+
+// CalculateGroupZOffset calculates the z-offset needed to place a group of objects at ground level
+// Returns the offset that should be added to move the lowest point to z=0
+func CalculateGroupZOffset(objects []models.Object) float64 {
+	minZ := 0.0
+	foundAny := false
+
+	for _, obj := range objects {
+		bbox, err := CalculateBoundingBox(&obj)
+		if err != nil {
+			continue
+		}
+
+		if !foundAny || bbox.MinZ < minZ {
+			minZ = bbox.MinZ
+			foundAny = true
+		}
+	}
+
+	// Return the offset needed to bring minZ to 0
+	return -minZ
+}
+
+// CalculateZOffsetWithTransforms calculates the z-offset for objects with transforms
+func CalculateZOffsetWithTransforms(objects []models.Object, transforms []string) float64 {
+	minZ := 0.0
+	foundAny := false
+
+	for i, obj := range objects {
+		bbox, err := CalculateBoundingBox(&obj)
+		if err != nil {
+			continue
+		}
+
+		// Apply transform to get actual z position
+		_, _, dz := parseTransform(transforms[i])
+		actualMinZ := bbox.MinZ + dz
+
+		if !foundAny || actualMinZ < minZ {
+			minZ = actualMinZ
+			foundAny = true
+		}
+	}
+
+	// Return the offset needed to bring minZ to 0
+	return -minZ
+}
+

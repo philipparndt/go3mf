@@ -200,9 +200,76 @@ func (l *Loader) ConvertToScadFiles(config *models.YamlConfig) []models.ScadFile
 				Name:         compositeName,
 				FilamentSlot: part.Filament,
 				ConfigFiles:  configFiles,
+				RotationX:    part.RotationX,
+				RotationY:    part.RotationY,
+				RotationZ:    part.RotationZ,
+				PositionX:    part.PositionX,
+				PositionY:    part.PositionY,
+				PositionZ:    part.PositionZ,
 			})
 		}
 	}
 
 	return scadFiles
 }
+
+// ConvertToObjectGroups converts YAML config to ObjectGroup list with normalization settings
+func (l *Loader) ConvertToObjectGroups(config *models.YamlConfig) []models.ObjectGroup {
+	var objectGroups []models.ObjectGroup
+
+	for _, obj := range config.Objects {
+		// Default normalize_position to true if not specified
+		normalizePosition := true
+		if obj.NormalizePosition != nil {
+			normalizePosition = *obj.NormalizePosition
+		}
+
+		var parts []models.ScadFile
+		for _, part := range obj.Parts {
+			// Create a composite name: object_name/part_name
+			compositeName := obj.Name
+			if len(obj.Parts) > 1 {
+				compositeName = obj.Name + "/" + part.Name
+			}
+
+			// Combine object-level and part-level config files
+			configFiles := make(map[string]string)
+
+			// Start with object-level configs
+			for _, configMap := range obj.Config {
+				for filename, content := range configMap {
+					configFiles[filename] = convertConfigContent(content)
+				}
+			}
+
+			// Override with part-level configs
+			for _, configMap := range part.Config {
+				for filename, content := range configMap {
+					configFiles[filename] = convertConfigContent(content)
+				}
+			}
+
+			parts = append(parts, models.ScadFile{
+				Path:         part.File,
+				Name:         compositeName,
+				FilamentSlot: part.Filament,
+				ConfigFiles:  configFiles,
+				RotationX:    part.RotationX,
+				RotationY:    part.RotationY,
+				RotationZ:    part.RotationZ,
+				PositionX:    part.PositionX,
+				PositionY:    part.PositionY,
+				PositionZ:    part.PositionZ,
+			})
+		}
+
+		objectGroups = append(objectGroups, models.ObjectGroup{
+			Name:              obj.Name,
+			Parts:             parts,
+			NormalizePosition: normalizePosition,
+		})
+	}
+
+	return objectGroups
+}
+

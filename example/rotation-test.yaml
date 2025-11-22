@@ -1,0 +1,37 @@
+# Test configuration for rotation feature
+# This demonstrates rotation in all three axes
+output: rotation-test.3mf
+
+packing_distance: 15.0
+
+objects:
+  - name: NoRotation
+    parts:
+      - name: part
+        file: a.scad
+
+  - name: RotateX
+    parts:
+      - name: part
+        file: a.scad
+        rotation_x: 90
+
+  - name: RotateY
+    parts:
+      - name: part
+        file: a.scad
+        rotation_y: 90
+
+  - name: RotateZ
+    parts:
+      - name: part
+        file: a.scad
+        rotation_z: 90
+
+  - name: RotateAll
+    parts:
+      - name: part
+        file: a.scad
+        rotation_x: 45
+        rotation_y: 45
+        rotation_z: 45

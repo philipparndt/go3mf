@@ -121,13 +121,20 @@ type ScadFile struct {
 	Name         string
 	FilamentSlot int               // 1-4 for AMS slots, 0 for auto-assign
 	ConfigFiles  map[string]string // Map of config filename -> content
+	RotationX    float64           // Rotation around X axis in degrees
+	RotationY    float64           // Rotation around Y axis in degrees
+	RotationZ    float64           // Rotation around Z axis in degrees
+	PositionX    float64           // Relative position offset in X (mm)
+	PositionY    float64           // Relative position offset in Y (mm)
+	PositionZ    float64           // Relative position offset in Z (mm)
 }
 
 // ObjectGroup represents a group of parts that form a single object
 type ObjectGroup struct {
-	ID    string     // Object ID in the 3MF model
-	Name  string     // Object name
-	Parts []ScadFile // Parts in this object
+	ID                string     // Object ID in the 3MF model
+	Name              string     // Object name
+	Parts             []ScadFile // Parts in this object
+	NormalizePosition bool       // If true, normalize z-position to ground level
 }
 
 // YamlConfig represents the complete YAML configuration file
@@ -140,17 +147,24 @@ type YamlConfig struct {
 
 // YamlObject represents a single object in the model
 type YamlObject struct {
-	Name   string                 `yaml:"name"`
-	Config []map[string]interface{} `yaml:"config,omitempty"` // Array of config filename -> content maps (applied to all parts)
-	Parts  []YamlPart             `yaml:"parts"`
+	Name              string                   `yaml:"name"`
+	Config            []map[string]interface{} `yaml:"config,omitempty"`            // Array of config filename -> content maps (applied to all parts)
+	NormalizePosition *bool                    `yaml:"normalize_position,omitempty"` // If true, normalize z-position to ground level (default: true)
+	Parts             []YamlPart               `yaml:"parts"`
 }
 
 // YamlPart represents a part within an object
 type YamlPart struct {
-	Name     string                 `yaml:"name"`
-	File     string                 `yaml:"file"`
-	Config   []map[string]interface{} `yaml:"config,omitempty"`   // Array of config filename -> content maps (part-specific)
-	Filament int                    `yaml:"filament,omitempty"` // 1-4 for AMS slots, 0 for auto-assign
+	Name      string                   `yaml:"name"`
+	File      string                   `yaml:"file"`
+	Config    []map[string]interface{} `yaml:"config,omitempty"`     // Array of config filename -> content maps (part-specific)
+	Filament  int                      `yaml:"filament,omitempty"`   // 1-4 for AMS slots, 0 for auto-assign
+	RotationX float64                  `yaml:"rotation_x,omitempty"` // Rotation around X axis in degrees
+	RotationY float64                  `yaml:"rotation_y,omitempty"` // Rotation around Y axis in degrees
+	RotationZ float64                  `yaml:"rotation_z,omitempty"` // Rotation around Z axis in degrees
+	PositionX float64                  `yaml:"position_x,omitempty"` // Relative position offset in X (mm)
+	PositionY float64                  `yaml:"position_y,omitempty"` // Relative position offset in Y (mm)
+	PositionZ float64                  `yaml:"position_z,omitempty"` // Relative position offset in Z (mm)
 }
 
 // ModelSettings represents the Bambu Studio model_settings.config structure

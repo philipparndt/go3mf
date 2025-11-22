@@ -308,6 +308,7 @@ func getFileTypeNames(fileTypes map[FileType][]string) []string {
 type Context struct {
 	YAMLConfig    *models.YamlConfig
 	SCADFiles     []models.ScadFile
+	ObjectGroups  []models.ObjectGroup // Object groups with normalization settings
 	RenderedFiles []string
 	OutputFile    string
 	ConfigDir     string   // Directory where the config.yaml file is located
@@ -476,7 +477,9 @@ func (s *ValidateFilesStep) Execute() error {
 	if buildContext.YAMLConfig != nil {
 		loader := config.NewLoader()
 		scadFiles := loader.ConvertToScadFiles(buildContext.YAMLConfig)
+		objectGroups := loader.ConvertToObjectGroups(buildContext.YAMLConfig)
 		buildContext.SCADFiles = scadFiles
+		buildContext.ObjectGroups = objectGroups
 		for _, scad := range scadFiles {
 			allPaths = append(allPaths, scad.Path)
 		}
@@ -560,8 +563,15 @@ func (s *CombineWithGroupsStep) Execute() error {
 		packingAlgo = models.NewPackingAlgorithm(buildContext.YAMLConfig.PackingAlgorithm)
 	}
 
-	if err := combiner.CombineWithGroupsAndDistance(buildContext.RenderedFiles, buildContext.SCADFiles, buildContext.OutputFile, packingDistance, packingAlgo); err != nil {
-		return err
+	// Use CombineWithObjectGroups if we have object groups with settings, otherwise fall back to CombineWithGroupsAndDistance
+	if len(buildContext.ObjectGroups) > 0 {
+		if err := combiner.CombineWithObjectGroups(buildContext.RenderedFiles, buildContext.ObjectGroups, buildContext.OutputFile, packingDistance, packingAlgo); err != nil {
+			return err
+		}
+	} else {
+		if err := combiner.CombineWithGroupsAndDistance(buildContext.RenderedFiles, buildContext.SCADFiles, buildContext.OutputFile, packingDistance, packingAlgo); err != nil {
+			return err
+		}
 	}
 
 	// Print success

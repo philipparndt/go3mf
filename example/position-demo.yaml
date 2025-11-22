@@ -1,0 +1,70 @@
+# Example demonstrating position normalization and relative positioning features
+# This shows how to control object placement on the build plate
+
+output: position-demo.3mf
+packing_distance: 15.0
+
+objects:
+  # Object 1: Default behavior - normalized to ground level (z=0)
+  # All objects are placed on the ground by default
+  - name: GroundObject
+    parts:
+      - name: part
+        file: a.scad
+        filament: 1
+        # No position specified - sits on ground at (0,0,0) relative to object
+
+  # Object 2: Multi-part object with relative positioning
+  # Parts maintain their relative positions while the whole group is normalized to ground
+  - name: Assembly
+    parts:
+      - name: base
+        file: a.scad
+        filament: 2
+        # Base at origin
+
+      - name: top
+        file: b.scad
+        filament: 3
+        # Position top part 10mm above base (z direction)
+        position_z: 10
+
+      - name: side
+        file: a.scad
+        filament: 4
+        # Position side part offset in x direction
+        position_x: 15
+        position_z: 5
+
+  # Object 3: Disable normalization - keep original z-position from model
+  # Use this when you want precise z-positioning or the model is already positioned correctly
+  - name: NoNormalization
+    normalize_position: false  # Disable ground-level normalization
+    parts:
+      - name: floating
+        file: a.scad
+        # This will keep its original z-position from the 3D model
+        # Useful when the SCAD file has specific z-positioning built in
+
+  # Object 4: Complex positioning with rotation
+  - name: ComplexPart
+    parts:
+      - name: main
+        file: b.scad
+        rotation_z: 45  # Rotate 45 degrees around Z axis
+        position_x: 5   # Offset 5mm in X direction
+        position_y: 5   # Offset 5mm in Y direction
+
+# Key features:
+# 1. normalize_position (default: true)
+#    - true: Objects are placed at ground level (z=0)
+#    - false: Objects keep their original z-position from the model
+#
+# 2. position_x, position_y, position_z (default: 0)
+#    - Relative offsets within an object
+#    - When multiple parts share an object, they maintain relative positions
+#    - Positions are in millimeters
+#
+# 3. Combined with rotation:
+#    - Rotation is applied first, then position offset
+#    - All at the object's origin before packing on the build plate

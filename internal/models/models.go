@@ -148,7 +148,8 @@ type YamlConfig struct {
 // YamlObject represents a single object in the model
 type YamlObject struct {
 	Name              string                   `yaml:"name"`
-	Config            []map[string]interface{} `yaml:"config,omitempty"`            // Array of config filename -> content maps (applied to all parts)
+	Count             int                      `yaml:"count,omitempty"`              // Number of copies of this object (default: 1)
+	Config            []map[string]interface{} `yaml:"config,omitempty"`             // Array of config filename -> content maps (applied to all parts)
 	NormalizePosition *bool                    `yaml:"normalize_position,omitempty"` // If true, normalize z-position to ground level (default: true)
 	Parts             []YamlPart               `yaml:"parts"`
 }

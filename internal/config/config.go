@@ -170,43 +170,57 @@ func (l *Loader) ConvertToScadFiles(config *models.YamlConfig) []models.ScadFile
 	var scadFiles []models.ScadFile
 
 	for _, obj := range config.Objects {
-		for _, part := range obj.Parts {
-			// Create a composite name: object_name/part_name
-			compositeName := obj.Name
-			if len(obj.Parts) > 1 {
-				compositeName = obj.Name + "/" + part.Name
-			}
+		// Determine how many copies of this object to create
+		count := obj.Count
+		if count < 1 {
+			count = 1
+		}
 
-			// Combine object-level and part-level config files
-			// Part-level config takes precedence (overrides object-level for same filename)
-			configFiles := make(map[string]string)
-
-			// Start with object-level configs
-			for _, configMap := range obj.Config {
-				for filename, content := range configMap {
-					configFiles[filename] = convertConfigContent(content)
+		for copyIdx := 0; copyIdx < count; copyIdx++ {
+			for _, part := range obj.Parts {
+				// Create a composite name: object_name/part_name
+				// Add copy number suffix if count > 1
+				objName := obj.Name
+				if count > 1 {
+					objName = fmt.Sprintf("%s_%d", obj.Name, copyIdx+1)
 				}
-			}
 
-			// Override with part-level configs
-			for _, configMap := range part.Config {
-				for filename, content := range configMap {
-					configFiles[filename] = convertConfigContent(content)
+				compositeName := objName
+				if len(obj.Parts) > 1 {
+					compositeName = objName + "/" + part.Name
 				}
-			}
 
-			scadFiles = append(scadFiles, models.ScadFile{
-				Path:         part.File,
-				Name:         compositeName,
-				FilamentSlot: part.Filament,
-				ConfigFiles:  configFiles,
-				RotationX:    part.RotationX,
-				RotationY:    part.RotationY,
-				RotationZ:    part.RotationZ,
-				PositionX:    part.PositionX,
-				PositionY:    part.PositionY,
-				PositionZ:    part.PositionZ,
-			})
+				// Combine object-level and part-level config files
+				// Part-level config takes precedence (overrides object-level for same filename)
+				configFiles := make(map[string]string)
+
+				// Start with object-level configs
+				for _, configMap := range obj.Config {
+					for filename, content := range configMap {
+						configFiles[filename] = convertConfigContent(content)
+					}
+				}
+
+				// Override with part-level configs
+				for _, configMap := range part.Config {
+					for filename, content := range configMap {
+						configFiles[filename] = convertConfigContent(content)
+					}
+				}
+
+				scadFiles = append(scadFiles, models.ScadFile{
+					Path:         part.File,
+					Name:         compositeName,
+					FilamentSlot: part.Filament,
+					ConfigFiles:  configFiles,
+					RotationX:    part.RotationX,
+					RotationY:    part.RotationY,
+					RotationZ:    part.RotationZ,
+					PositionX:    part.PositionX,
+					PositionY:    part.PositionY,
+					PositionZ:    part.PositionZ,
+				})
+			}
 		}
 	}
 
@@ -224,50 +238,64 @@ func (l *Loader) ConvertToObjectGroups(config *models.YamlConfig) []models.Objec
 			normalizePosition = *obj.NormalizePosition
 		}
 
-		var parts []models.ScadFile
-		for _, part := range obj.Parts {
-			// Create a composite name: object_name/part_name
-			compositeName := obj.Name
-			if len(obj.Parts) > 1 {
-				compositeName = obj.Name + "/" + part.Name
-			}
-
-			// Combine object-level and part-level config files
-			configFiles := make(map[string]string)
-
-			// Start with object-level configs
-			for _, configMap := range obj.Config {
-				for filename, content := range configMap {
-					configFiles[filename] = convertConfigContent(content)
-				}
-			}
-
-			// Override with part-level configs
-			for _, configMap := range part.Config {
-				for filename, content := range configMap {
-					configFiles[filename] = convertConfigContent(content)
-				}
-			}
-
-			parts = append(parts, models.ScadFile{
-				Path:         part.File,
-				Name:         compositeName,
-				FilamentSlot: part.Filament,
-				ConfigFiles:  configFiles,
-				RotationX:    part.RotationX,
-				RotationY:    part.RotationY,
-				RotationZ:    part.RotationZ,
-				PositionX:    part.PositionX,
-				PositionY:    part.PositionY,
-				PositionZ:    part.PositionZ,
-			})
+		// Determine how many copies of this object to create
+		count := obj.Count
+		if count < 1 {
+			count = 1
 		}
 
-		objectGroups = append(objectGroups, models.ObjectGroup{
-			Name:              obj.Name,
-			Parts:             parts,
-			NormalizePosition: normalizePosition,
-		})
+		for copyIdx := 0; copyIdx < count; copyIdx++ {
+			// Generate object name with copy number suffix if count > 1
+			objName := obj.Name
+			if count > 1 {
+				objName = fmt.Sprintf("%s_%d", obj.Name, copyIdx+1)
+			}
+
+			var parts []models.ScadFile
+			for _, part := range obj.Parts {
+				// Create a composite name: object_name/part_name
+				compositeName := objName
+				if len(obj.Parts) > 1 {
+					compositeName = objName + "/" + part.Name
+				}
+
+				// Combine object-level and part-level config files
+				configFiles := make(map[string]string)
+
+				// Start with object-level configs
+				for _, configMap := range obj.Config {
+					for filename, content := range configMap {
+						configFiles[filename] = convertConfigContent(content)
+					}
+				}
+
+				// Override with part-level configs
+				for _, configMap := range part.Config {
+					for filename, content := range configMap {
+						configFiles[filename] = convertConfigContent(content)
+					}
+				}
+
+				parts = append(parts, models.ScadFile{
+					Path:         part.File,
+					Name:         compositeName,
+					FilamentSlot: part.Filament,
+					ConfigFiles:  configFiles,
+					RotationX:    part.RotationX,
+					RotationY:    part.RotationY,
+					RotationZ:    part.RotationZ,
+					PositionX:    part.PositionX,
+					PositionY:    part.PositionY,
+					PositionZ:    part.PositionZ,
+				})
+			}
+
+			objectGroups = append(objectGroups, models.ObjectGroup{
+				Name:              objName,
+				Parts:             parts,
+				NormalizePosition: normalizePosition,
+			})
+		}
 	}
 
 	return objectGroups

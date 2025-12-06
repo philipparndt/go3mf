@@ -33,7 +33,8 @@ func checkOpenSCAD() error {
 	return nil
 }
 
-// ValidateFiles checks if SCAD files exist and are readable
+// ValidateFiles checks if files exist and are readable
+// Supports SCAD, STL, and 3MF files
 func ValidateFiles(paths []string) error {
 	for _, path := range paths {
 		// Parse path:name format if provided
@@ -49,8 +50,8 @@ func ValidateFiles(paths []string) error {
 			return fmt.Errorf("%s is a directory, not a file", filePath)
 		}
 
-		if !isScadFile(filePath) {
-			return fmt.Errorf("%s is not a SCAD file (must end in .scad)", filePath)
+		if !isSupportedFile(filePath) {
+			return fmt.Errorf("%s is not a supported file type (must be .scad, .stl, or .3mf)", filePath)
 		}
 
 		file, err := os.Open(filePath)
@@ -63,8 +64,26 @@ func ValidateFiles(paths []string) error {
 	return nil
 }
 
-func isScadFile(path string) bool {
-	return len(path) > 5 && path[len(path)-5:] == ".scad"
+func isSupportedFile(path string) bool {
+	lowerPath := strings.ToLower(path)
+	return strings.HasSuffix(lowerPath, ".scad") ||
+		strings.HasSuffix(lowerPath, ".stl") ||
+		strings.HasSuffix(lowerPath, ".3mf")
+}
+
+// IsScadFile checks if a file has a .scad extension
+func IsScadFile(path string) bool {
+	return strings.HasSuffix(strings.ToLower(path), ".scad")
+}
+
+// IsSTLFile checks if a file has a .stl extension
+func IsSTLFile(path string) bool {
+	return strings.HasSuffix(strings.ToLower(path), ".stl")
+}
+
+// Is3MFFile checks if a file has a .3mf extension
+func Is3MFFile(path string) bool {
+	return strings.HasSuffix(strings.ToLower(path), ".3mf")
 }
 
 // ValidateOutputPath checks if the output path is writable

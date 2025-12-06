@@ -448,7 +448,7 @@ func (s *LoadYAMLStep) Execute() error {
 	return nil
 }
 
-// CheckPreconditionsStep checks if OpenSCAD is installed
+// CheckPreconditionsStep checks if OpenSCAD is installed (only if SCAD files are present)
 type CheckPreconditionsStep struct{}
 
 func (s *CheckPreconditionsStep) Name() string {
@@ -456,11 +456,39 @@ func (s *CheckPreconditionsStep) Name() string {
 }
 
 func (s *CheckPreconditionsStep) Execute() error {
-	if err := preconditions.Check(); err != nil {
-		return fmt.Errorf("OpenSCAD not found: %w", err)
+	// Check if there are any SCAD files that need rendering
+	hasScadFiles := false
+	if buildContext.YAMLConfig != nil {
+		for _, obj := range buildContext.YAMLConfig.Objects {
+			for _, part := range obj.Parts {
+				if preconditions.IsScadFile(part.File) {
+					hasScadFiles = true
+					break
+				}
+			}
+			if hasScadFiles {
+				break
+			}
+		}
+	} else if len(buildContext.SCADFiles) > 0 {
+		for _, scad := range buildContext.SCADFiles {
+			if preconditions.IsScadFile(scad.Path) {
+				hasScadFiles = true
+				break
+			}
+		}
 	}
-	if ui.IsVerbose() {
-		ui.PrintSuccess("✓ OpenSCAD is available")
+
+	// Only check for OpenSCAD if there are SCAD files to render
+	if hasScadFiles {
+		if err := preconditions.Check(); err != nil {
+			return fmt.Errorf("OpenSCAD not found: %w", err)
+		}
+		if ui.IsVerbose() {
+			ui.PrintSuccess("✓ OpenSCAD is available")
+		}
+	} else if ui.IsVerbose() {
+		ui.PrintInfo("No SCAD files to render, skipping OpenSCAD check")
 	}
 	return nil
 }
@@ -500,16 +528,17 @@ func (s *ValidateFilesStep) Execute() error {
 	return nil
 }
 
-// RenderSCADFilesStep renders all SCAD files to 3MF
+// RenderSCADFilesStep renders SCAD files to 3MF and converts STL files to 3MF
+// 3MF files are passed through directly
 type RenderSCADFilesStep struct{}
 
 func (s *RenderSCADFilesStep) Name() string {
-	return "Render SCAD files"
+	return "Process input files"
 }
 
 func (s *RenderSCADFilesStep) Execute() error {
 	if len(buildContext.SCADFiles) == 0 {
-		return fmt.Errorf("no SCAD files to render")
+		return fmt.Errorf("no files to process")
 	}
 
 	// Use the config directory as the base directory if available
@@ -518,22 +547,83 @@ func (s *RenderSCADFilesStep) Execute() error {
 		baseDir = filepath.Dir(buildContext.SCADFiles[0].Path)
 	}
 
-	if !ui.IsVerbose() {
-		ui.PrintInfo(fmt.Sprintf("Rendering %d SCAD file(s)...", len(buildContext.SCADFiles)))
-	}
-
-	tempFiles, err := renderer.RenderMultipleSCADWithConfigs(baseDir, buildContext.SCADFiles)
-	if err != nil {
-		return err
-	}
-	buildContext.RenderedFiles = tempFiles
-
-	if ui.IsVerbose() {
-		for _, scad := range buildContext.SCADFiles {
-			ui.PrintItem(fmt.Sprintf("✓ %s → %s", filepath.Base(scad.Path), scad.Name))
+	// Count file types for reporting
+	scadCount := 0
+	stlCount := 0
+	threemfCount := 0
+	for _, f := range buildContext.SCADFiles {
+		switch {
+		case preconditions.IsScadFile(f.Path):
+			scadCount++
+		case preconditions.IsSTLFile(f.Path):
+			stlCount++
+		case preconditions.Is3MFFile(f.Path):
+			threemfCount++
 		}
 	}
-	ui.PrintSuccess(fmt.Sprintf("Rendered %d file(s)", len(tempFiles)))
+
+	if !ui.IsVerbose() {
+		var parts []string
+		if scadCount > 0 {
+			parts = append(parts, fmt.Sprintf("%d SCAD", scadCount))
+		}
+		if stlCount > 0 {
+			parts = append(parts, fmt.Sprintf("%d STL", stlCount))
+		}
+		if threemfCount > 0 {
+			parts = append(parts, fmt.Sprintf("%d 3MF", threemfCount))
+		}
+		ui.PrintInfo(fmt.Sprintf("Processing %s file(s)...", strings.Join(parts, ", ")))
+	}
+
+	var tempFiles []string
+	stlConverter := stl.NewConverter()
+
+	for i, scadFile := range buildContext.SCADFiles {
+		tempFile := fmt.Sprintf("/tmp/scad_render_%d.3mf", i)
+
+		switch {
+		case preconditions.IsScadFile(scadFile.Path):
+			// Render SCAD file to 3MF
+			// Write config files to the base directory with their original names
+			for filename, content := range scadFile.ConfigFiles {
+				configPath := filepath.Join(baseDir, filename)
+				if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
+					return fmt.Errorf("failed to write config file %s: %w", configPath, err)
+				}
+			}
+			if err := renderer.RenderSCAD(baseDir, scadFile.Path, tempFile); err != nil {
+				return err
+			}
+			tempFiles = append(tempFiles, tempFile)
+			if ui.IsVerbose() {
+				ui.PrintItem(fmt.Sprintf("✓ Rendered %s → %s", filepath.Base(scadFile.Path), scadFile.Name))
+			}
+
+		case preconditions.IsSTLFile(scadFile.Path):
+			// Convert STL file to 3MF
+			if err := stlConverter.ConvertTo3MF(scadFile.Path, tempFile); err != nil {
+				return fmt.Errorf("error converting %s: %w", scadFile.Path, err)
+			}
+			tempFiles = append(tempFiles, tempFile)
+			if ui.IsVerbose() {
+				ui.PrintItem(fmt.Sprintf("✓ Converted %s → %s", filepath.Base(scadFile.Path), scadFile.Name))
+			}
+
+		case preconditions.Is3MFFile(scadFile.Path):
+			// 3MF files are passed through directly (use the original path)
+			tempFiles = append(tempFiles, scadFile.Path)
+			if ui.IsVerbose() {
+				ui.PrintItem(fmt.Sprintf("✓ Using %s → %s", filepath.Base(scadFile.Path), scadFile.Name))
+			}
+
+		default:
+			return fmt.Errorf("unsupported file type: %s", scadFile.Path)
+		}
+	}
+
+	buildContext.RenderedFiles = tempFiles
+	ui.PrintSuccess(fmt.Sprintf("Processed %d file(s)", len(tempFiles)))
 	return nil
 }
 

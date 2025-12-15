@@ -233,3 +233,82 @@ func CalculateZOffsetWithTransforms(objects []models.Object, transforms []string
 	return -minZ
 }
 
+// CalculateRotatedBoundingBox calculates the bounding box after applying rotation
+// rotX, rotY, rotZ are rotation angles in degrees
+func CalculateRotatedBoundingBox(obj *models.Object, rotX, rotY, rotZ float64) (*BoundingBox, error) {
+	// Get original bounding box
+	bbox, err := CalculateBoundingBox(obj)
+	if err != nil {
+		return nil, err
+	}
+
+	// If no rotation, return original
+	if rotX == 0 && rotY == 0 && rotZ == 0 {
+		return bbox, nil
+	}
+
+	// Convert degrees to radians
+	rx := rotX * math.Pi / 180.0
+	ry := rotY * math.Pi / 180.0
+	rz := rotZ * math.Pi / 180.0
+
+	// Calculate sin and cos values
+	cosX, sinX := math.Cos(rx), math.Sin(rx)
+	cosY, sinY := math.Cos(ry), math.Sin(ry)
+	cosZ, sinZ := math.Cos(rz), math.Sin(rz)
+
+	// Build combined rotation matrix (Z * Y * X)
+	m11 := cosY * cosZ
+	m12 := cosY * sinZ
+	m13 := -sinY
+
+	m21 := sinX*sinY*cosZ - cosX*sinZ
+	m22 := sinX*sinY*sinZ + cosX*cosZ
+	m23 := sinX * cosY
+
+	m31 := cosX*sinY*cosZ + sinX*sinZ
+	m32 := cosX*sinY*sinZ - sinX*cosZ
+	m33 := cosX * cosY
+
+	// Get all 8 corners of the original bounding box
+	corners := [][3]float64{
+		{bbox.MinX, bbox.MinY, bbox.MinZ},
+		{bbox.MaxX, bbox.MinY, bbox.MinZ},
+		{bbox.MinX, bbox.MaxY, bbox.MinZ},
+		{bbox.MaxX, bbox.MaxY, bbox.MinZ},
+		{bbox.MinX, bbox.MinY, bbox.MaxZ},
+		{bbox.MaxX, bbox.MinY, bbox.MaxZ},
+		{bbox.MinX, bbox.MaxY, bbox.MaxZ},
+		{bbox.MaxX, bbox.MaxY, bbox.MaxZ},
+	}
+
+	// Rotate all corners and find new bounding box
+	rotatedBBox := &BoundingBox{
+		MinX: math.MaxFloat64,
+		MinY: math.MaxFloat64,
+		MinZ: math.MaxFloat64,
+		MaxX: -math.MaxFloat64,
+		MaxY: -math.MaxFloat64,
+		MaxZ: -math.MaxFloat64,
+	}
+
+	for _, corner := range corners {
+		x, y, z := corner[0], corner[1], corner[2]
+
+		// Apply rotation matrix
+		newX := m11*x + m21*y + m31*z
+		newY := m12*x + m22*y + m32*z
+		newZ := m13*x + m23*y + m33*z
+
+		// Update bounding box
+		rotatedBBox.MinX = math.Min(rotatedBBox.MinX, newX)
+		rotatedBBox.MinY = math.Min(rotatedBBox.MinY, newY)
+		rotatedBBox.MinZ = math.Min(rotatedBBox.MinZ, newZ)
+		rotatedBBox.MaxX = math.Max(rotatedBBox.MaxX, newX)
+		rotatedBBox.MaxY = math.Max(rotatedBBox.MaxY, newY)
+		rotatedBBox.MaxZ = math.Max(rotatedBBox.MaxZ, newZ)
+	}
+
+	return rotatedBBox, nil
+}
+

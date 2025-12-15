@@ -354,20 +354,46 @@ func generateSeparatePartsYAML(files []string, outputPath string) string {
 	threemfOutput := baseOutput + ".3mf"
 
 	builder.WriteString("# Generated configuration file\n")
-	builder.WriteString("# All files are organized as separate parts within a single object\n\n")
+	builder.WriteString("# All files are organized as separate parts within a single object\n")
+	builder.WriteString("# Documentation: https://github.com/philipparndt/go3mf\n\n")
+
 	builder.WriteString(fmt.Sprintf("output: %s\n\n", threemfOutput))
+
 	builder.WriteString("# Packing distance between objects in mm (default: 10.0)\n")
-	builder.WriteString("packing_distance: 10.0\n\n")
+	builder.WriteString("# packing_distance: 10.0\n\n")
+
+	builder.WriteString("# Packing algorithm: \"default\" or \"compact\" (default: \"default\")\n")
+	builder.WriteString("# packing_algorithm: default\n\n")
+
 	builder.WriteString("objects:\n")
 	builder.WriteString("  - name: Combined\n")
+	builder.WriteString("    # count: 1  # Number of copies of this object (default: 1)\n")
+	builder.WriteString("    # normalize_position: true  # Place object at ground level (default: true)\n")
+	builder.WriteString("    # config:  # OpenSCAD config applied to all parts\n")
+	builder.WriteString("    #   - config.scad:\n")
+	builder.WriteString("    #       variable_name: value\n")
 	builder.WriteString("    parts:\n")
 
-	for _, file := range files {
+	for i, file := range files {
 		partName := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
 		builder.WriteString(fmt.Sprintf("      - name: %s\n", partName))
 		builder.WriteString(fmt.Sprintf("        file: %s\n", file))
-		builder.WriteString("        # filament: 1  # Uncomment to assign to specific AMS slot (1-4)\n")
-		builder.WriteString("\n")
+
+		// Add all optional fields as comments
+		builder.WriteString("        # filament: 1  # AMS slot (1-4), 0 or omit for auto\n")
+		builder.WriteString("        # rotation_x: 0  # Rotation around X axis in degrees\n")
+		builder.WriteString("        # rotation_y: 0  # Rotation around Y axis in degrees\n")
+		builder.WriteString("        # rotation_z: 0  # Rotation around Z axis in degrees\n")
+		builder.WriteString("        # position_x: 0  # Relative X position offset in mm\n")
+		builder.WriteString("        # position_y: 0  # Relative Y position offset in mm\n")
+		builder.WriteString("        # position_z: 0  # Relative Z position offset in mm\n")
+		builder.WriteString("        # config:  # Part-specific OpenSCAD config (overrides object config)\n")
+		builder.WriteString("        #   - config.scad:\n")
+		builder.WriteString("        #       variable_name: value\n")
+
+		if i < len(files)-1 {
+			builder.WriteString("\n")
+		}
 	}
 
 	return builder.String()
@@ -382,20 +408,44 @@ func generateSeparateObjectsYAML(files []string, outputPath string) string {
 	threemfOutput := baseOutput + ".3mf"
 
 	builder.WriteString("# Generated configuration file\n")
-	builder.WriteString("# Each file is organized as a separate object\n\n")
+	builder.WriteString("# Each file is organized as a separate object\n")
+	builder.WriteString("# Documentation: https://github.com/philipparndt/go3mf\n\n")
+
 	builder.WriteString(fmt.Sprintf("output: %s\n\n", threemfOutput))
+
 	builder.WriteString("# Packing distance between objects in mm (default: 10.0)\n")
-	builder.WriteString("packing_distance: 10.0\n\n")
+	builder.WriteString("# packing_distance: 10.0\n\n")
+
+	builder.WriteString("# Packing algorithm: \"default\" or \"compact\" (default: \"default\")\n")
+	builder.WriteString("# packing_algorithm: default\n\n")
+
 	builder.WriteString("objects:\n")
 
-	for _, file := range files {
+	for i, file := range files {
 		objectName := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
 		builder.WriteString(fmt.Sprintf("  - name: %s\n", objectName))
+		builder.WriteString("    # count: 1  # Number of copies of this object (default: 1)\n")
+		builder.WriteString("    # normalize_position: true  # Place object at ground level (default: true)\n")
+		builder.WriteString("    # config:  # OpenSCAD config applied to all parts\n")
+		builder.WriteString("    #   - config.scad:\n")
+		builder.WriteString("    #       variable_name: value\n")
 		builder.WriteString("    parts:\n")
 		builder.WriteString("      - name: main\n")
 		builder.WriteString(fmt.Sprintf("        file: %s\n", file))
-		builder.WriteString("        # filament: 1  # Uncomment to assign to specific AMS slot (1-4)\n")
-		builder.WriteString("\n")
+		builder.WriteString("        # filament: 1  # AMS slot (1-4), 0 or omit for auto\n")
+		builder.WriteString("        # rotation_x: 0  # Rotation around X axis in degrees\n")
+		builder.WriteString("        # rotation_y: 0  # Rotation around Y axis in degrees\n")
+		builder.WriteString("        # rotation_z: 0  # Rotation around Z axis in degrees\n")
+		builder.WriteString("        # position_x: 0  # Relative X position offset in mm\n")
+		builder.WriteString("        # position_y: 0  # Relative Y position offset in mm\n")
+		builder.WriteString("        # position_z: 0  # Relative Z position offset in mm\n")
+		builder.WriteString("        # config:  # Part-specific OpenSCAD config (overrides object config)\n")
+		builder.WriteString("        #   - config.scad:\n")
+		builder.WriteString("        #       variable_name: value\n")
+
+		if i < len(files)-1 {
+			builder.WriteString("\n")
+		}
 	}
 
 	return builder.String()

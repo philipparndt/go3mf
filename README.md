@@ -59,8 +59,9 @@ objects:
         filament: 1  # Optional: 1-4 for AMS slots, 0 or omit for auto
         rotation_z: 45  # Optional: rotate 45° around Z axis
 
-  # Multi-part object
+  # Multi-part object with multiple copies
   - name: Assembly
+    count: 3  # Optional: create 3 copies of this object
     parts:
       - name: main_body
         file: body.scad
@@ -78,6 +79,7 @@ objects:
 - `packing_algorithm` - Packing algorithm: "default" or "compact" (optional, default: "default")
 - `objects` - Array of objects (required, at least one)
   - `name` - Object name (required)
+  - `count` - Number of copies of this object (optional, default: 1)
   - `normalize_position` - Place object at ground level (optional, default: true)
   - `config` - Array of config files (optional, can be at object or part level)
   - `parts` - Array of parts in the object (required, at least one)

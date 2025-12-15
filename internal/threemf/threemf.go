@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"strconv"
 
@@ -429,10 +430,12 @@ func (c *Combiner) combineWithGroupsAndDistanceInternal(tempFiles []string, scad
 			groupScadFiles = append(groupScadFiles, scadFiles[meshID-1])
 		}
 
-		// Calculate dimensions for packing
+		// Calculate dimensions for packing (considering rotations)
 		var width, height float64
 		if len(meshIDs) == 1 {
-			bbox, err := geometry.CalculateBoundingBox(&groupObjects[0])
+			// Use rotated bounding box for single-part objects
+			scadFile := groupScadFiles[0]
+			bbox, err := geometry.CalculateRotatedBoundingBox(&groupObjects[0], scadFile.RotationX, scadFile.RotationY, scadFile.RotationZ)
 			if err == nil {
 				width = bbox.Width()
 				height = bbox.Height()
@@ -440,15 +443,32 @@ func (c *Combiner) combineWithGroupsAndDistanceInternal(tempFiles []string, scad
 				width, height = 50.0, 50.0 // fallback
 			}
 		} else {
-			// For multi-part objects, calculate combined bounding box
-			transforms := make([]string, len(groupObjects))
-			for i := range transforms {
-				transforms[i] = "1 0 0 0 1 0 0 0 1 0 0 0" // All at origin
+			// For multi-part objects, calculate combined bounding box with rotations
+			var combinedBBox *geometry.BoundingBox
+			for i, obj := range groupObjects {
+				scadFile := groupScadFiles[i]
+				bbox, err := geometry.CalculateRotatedBoundingBox(&obj, scadFile.RotationX, scadFile.RotationY, scadFile.RotationZ)
+				if err != nil {
+					continue
+				}
+				// Apply position offsets
+				bbox.MinX += scadFile.PositionX
+				bbox.MaxX += scadFile.PositionX
+				bbox.MinY += scadFile.PositionY
+				bbox.MaxY += scadFile.PositionY
+
+				if combinedBBox == nil {
+					combinedBBox = bbox
+				} else {
+					combinedBBox.MinX = math.Min(combinedBBox.MinX, bbox.MinX)
+					combinedBBox.MinY = math.Min(combinedBBox.MinY, bbox.MinY)
+					combinedBBox.MaxX = math.Max(combinedBBox.MaxX, bbox.MaxX)
+					combinedBBox.MaxY = math.Max(combinedBBox.MaxY, bbox.MaxY)
+				}
 			}
-			groupBBox, err := geometry.CalculateCombinedBoundingBox(groupObjects, transforms)
-			if err == nil {
-				width = groupBBox.Width()
-				height = groupBBox.Height()
+			if combinedBBox != nil {
+				width = combinedBBox.Width()
+				height = combinedBBox.Height()
 			} else {
 				width, height = 100.0, 100.0 // fallback
 			}

@@ -271,12 +271,22 @@ func (c *ExtractCmd) Run() error {
 
 type InitCmd struct {
 	Output string   `help:"Output YAML file path (default: config.yaml)" short:"o" default:"config.yaml"`
-	Files  []string `arg:"" help:"Files to include in the configuration"`
+	Files  []string `arg:"" help:"Files or glob patterns to include (e.g., *.stl, models/*.scad)"`
 }
 
 func (c *InitCmd) Run() error {
 	if len(c.Files) == 0 {
-		return fmt.Errorf("at least one file must be specified")
+		return fmt.Errorf("at least one file or pattern must be specified")
+	}
+
+	// Expand glob patterns
+	expandedFiles, err := expandGlobPatterns(c.Files)
+	if err != nil {
+		return fmt.Errorf("error expanding patterns: %w", err)
+	}
+
+	if len(expandedFiles) == 0 {
+		return fmt.Errorf("no files matched the specified pattern(s)")
 	}
 
 	// Check if output file already exists
@@ -288,12 +298,12 @@ func (c *InitCmd) Run() error {
 	ui.PrintTitle("go3mf Init")
 	ui.PrintHeader("Configuration Setup")
 
-	ui.PrintInfo(fmt.Sprintf("Creating configuration from %d file(s)", len(c.Files)))
+	ui.PrintInfo(fmt.Sprintf("Creating configuration from %d file(s)", len(expandedFiles)))
 	fmt.Println()
 
 	// Ask the user if files should be separate parts or separate objects
 	var organizationType string
-	err := huh.NewSelect[string]().
+	err = huh.NewSelect[string]().
 		Title("How should the files be organized?").
 		Options(
 			huh.NewOption("Separate parts (all files in one object)", "parts"),
@@ -308,9 +318,9 @@ func (c *InitCmd) Run() error {
 
 	var yamlContent string
 	if organizationType == "parts" {
-		yamlContent = generateSeparatePartsYAML(c.Files, c.Output)
+		yamlContent = generateSeparatePartsYAML(expandedFiles, c.Output)
 	} else {
-		yamlContent = generateSeparateObjectsYAML(c.Files, c.Output)
+		yamlContent = generateSeparateObjectsYAML(expandedFiles, c.Output)
 	}
 
 	// Write the YAML file
@@ -389,6 +399,38 @@ func generateSeparateObjectsYAML(files []string, outputPath string) string {
 	}
 
 	return builder.String()
+}
+
+// expandGlobPatterns expands glob patterns in the file list
+func expandGlobPatterns(patterns []string) ([]string, error) {
+	var result []string
+	seen := make(map[string]bool)
+
+	for _, pattern := range patterns {
+		// Try to expand as glob pattern
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			return nil, fmt.Errorf("invalid pattern %q: %w", pattern, err)
+		}
+
+		if len(matches) == 0 {
+			// No matches - treat as literal filename (will fail later if doesn't exist)
+			if !seen[pattern] {
+				result = append(result, pattern)
+				seen[pattern] = true
+			}
+		} else {
+			// Add all matches, avoiding duplicates
+			for _, match := range matches {
+				if !seen[match] {
+					result = append(result, match)
+					seen[match] = true
+				}
+			}
+		}
+	}
+
+	return result, nil
 }
 
 type VersionCmd struct{}

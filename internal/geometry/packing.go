@@ -235,9 +235,17 @@ func (p *Packer) PackCompact(objects []Rectangle) []PackingResult {
 
 	results := make([]PackingResult, len(sorted))
 
-	// Use guillotine algorithm with a target aspect ratio close to 1:1 (square)
-	// Start with a large virtual bin
-	maxHeight := 500.0
+	// Find the maximum object dimensions to ensure we have enough space
+	maxObjWidth := 0.0
+	maxObjHeight := 0.0
+	for _, obj := range sorted {
+		if obj.Width > maxObjWidth {
+			maxObjWidth = obj.Width
+		}
+		if obj.Height > maxObjHeight {
+			maxObjHeight = obj.Height
+		}
+	}
 
 	// Calculate total area to estimate optimal bin dimensions
 	totalArea := 0.0
@@ -246,20 +254,25 @@ func (p *Packer) PackCompact(objects []Rectangle) []PackingResult {
 	}
 
 	// Estimate optimal width to create a more square layout
-	// This balances width and height more evenly
+	// Ensure it's at least as wide as the widest object + margin
 	optimalWidth := math.Sqrt(totalArea * 1.2) // 20% padding
+	if optimalWidth < maxObjWidth+p.margin {
+		optimalWidth = maxObjWidth + p.margin
+	}
 	if optimalWidth < 100 {
 		optimalWidth = 100
 	}
-	if optimalWidth > 400 {
-		optimalWidth = 400
-	}
+	// No upper limit - let it grow as needed
 
-	// Create initial packing spaces
+	// Track current layout bounds for fallback positioning
+	currentMaxY := 0.0
+	currentMaxX := 0.0
+
+	// Create initial packing spaces with unlimited height
 	spaces := []struct {
 		x, y, width, height float64
 	}{
-		{0, 0, optimalWidth, maxHeight},
+		{0, 0, optimalWidth, 10000.0}, // Large height to allow vertical growth
 	}
 
 	// Pack each object into available spaces
@@ -277,6 +290,14 @@ func (p *Packer) PackCompact(objects []Rectangle) []PackingResult {
 					Fits:   true,
 					Width:  obj.Width,
 					Height: obj.Height,
+				}
+
+				// Track bounds for fallback
+				if space.x+obj.Width > currentMaxX {
+					currentMaxX = space.x + obj.Width
+				}
+				if space.y+obj.Height > currentMaxY {
+					currentMaxY = space.y + obj.Height
 				}
 
 				// Split the space using guillotine method
@@ -330,14 +351,56 @@ func (p *Packer) PackCompact(objects []Rectangle) []PackingResult {
 		}
 
 		if !packed {
-			// Fallback: place at origin of a new space if nothing fits
+			// Fallback: create a new row at the bottom for objects that don't fit
+			// Place the object at (0, currentMaxY + margin)
+			fallbackY := currentMaxY + p.margin
 			results[i] = PackingResult{
 				X:      0,
-				Y:      0,
+				Y:      fallbackY,
 				ID:     obj.ID,
-				Fits:   false,
+				Fits:   true, // Still fits, just needed a new row
 				Width:  obj.Width,
 				Height: obj.Height,
+			}
+
+			// Update bounds
+			if obj.Width > currentMaxX {
+				currentMaxX = obj.Width
+			}
+			currentMaxY = fallbackY + obj.Height
+
+			// Remove any existing spaces that would overlap with this fallback placement
+			// This prevents future objects from being placed in the same position
+			objWidthWithMargin := obj.Width + p.margin
+			objHeightWithMargin := obj.Height + p.margin
+			newSpaces := []struct {
+				x, y, width, height float64
+			}{}
+			for _, space := range spaces {
+				// Check if space overlaps with the fallback object's footprint
+				spaceRight := space.x + space.width
+				spaceBottom := space.y + space.height
+				objRight := objWidthWithMargin
+				objBottom := fallbackY + objHeightWithMargin
+
+				// No overlap if space is completely to the right, left, above, or below
+				if space.x >= objRight || spaceRight <= 0 || space.y >= objBottom || spaceBottom <= fallbackY {
+					newSpaces = append(newSpaces, space)
+				}
+				// Space overlaps - don't keep it (or we could split it, but simpler to discard)
+			}
+			spaces = newSpaces
+
+			// Add remaining space to the right of this object
+			if optimalWidth > obj.Width+p.margin {
+				spaces = append(spaces, struct {
+					x, y, width, height float64
+				}{
+					x:      obj.Width + p.margin,
+					y:      fallbackY,
+					width:  optimalWidth - obj.Width - p.margin,
+					height: obj.Height + p.margin,
+				})
 			}
 		}
 	}

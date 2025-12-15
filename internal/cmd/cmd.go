@@ -91,6 +91,9 @@ func (c *CombineCmd) Run() error {
 		outputFile = "combined.3mf"
 	}
 
+	// Set debug mode if requested
+	buildplan.SetDebug(c.Debug)
+
 	// Create build plan
 	planner := buildplan.NewPlanner()
 	plan, err := planner.CreatePlan(c.Files, c.Objects, outputFile)

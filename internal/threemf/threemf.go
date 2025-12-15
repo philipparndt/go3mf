@@ -279,6 +279,7 @@ func (w *Writer) Write(outputFile string, model *models.Model, sourceFile string
 type Combiner struct {
 	reader *Reader
 	writer *Writer
+	Debug  bool // Enable debug output
 }
 
 // NewCombiner creates a new Combiner
@@ -287,6 +288,11 @@ func NewCombiner() *Combiner {
 		reader: &Reader{},
 		writer: &Writer{},
 	}
+}
+
+// SetDebug enables or disables debug output
+func (c *Combiner) SetDebug(debug bool) {
+	c.Debug = debug
 }
 
 // Combine combines multiple 3MF files into one
@@ -491,6 +497,8 @@ func (c *Combiner) combineWithGroupsAndDistanceInternal(tempFiles []string, scad
 		objectName   string
 		groupObjects []models.Object
 		scadFiles    []models.ScadFile
+		bboxOffsetX  float64 // Offset needed to align rotated bbox corner to origin
+		bboxOffsetY  float64
 	})
 
 	packingID := 0
@@ -507,6 +515,7 @@ func (c *Combiner) combineWithGroupsAndDistanceInternal(tempFiles []string, scad
 
 		// Calculate dimensions for packing (considering rotations)
 		var width, height float64
+		var bboxOffsetX, bboxOffsetY float64 // Offset to align rotated bbox corner to origin
 		if len(meshIDs) == 1 {
 			// Use rotated bounding box for single-part objects
 			scadFile := groupScadFiles[0]
@@ -514,8 +523,18 @@ func (c *Combiner) combineWithGroupsAndDistanceInternal(tempFiles []string, scad
 			if err == nil {
 				width = bbox.Width()
 				height = bbox.Height()
+				// Store offset needed to bring the rotated bbox corner to the expected position
+				bboxOffsetX = -bbox.MinX
+				bboxOffsetY = -bbox.MinY
+				if c.Debug {
+					fmt.Printf("DEBUG: %s - bbox(%.1f,%.1f)-(%.1f,%.1f) size(%.1f,%.1f) offset(%.1f,%.1f)\n",
+						objectName, bbox.MinX, bbox.MinY, bbox.MaxX, bbox.MaxY, width, height, bboxOffsetX, bboxOffsetY)
+				}
 			} else {
 				width, height = 50.0, 50.0 // fallback
+				if c.Debug {
+					fmt.Printf("DEBUG: %s - fallback size(50,50) - error: %v\n", objectName, err)
+				}
 			}
 		} else {
 			// For multi-part objects, calculate combined bounding box with rotations
@@ -544,6 +563,9 @@ func (c *Combiner) combineWithGroupsAndDistanceInternal(tempFiles []string, scad
 			if combinedBBox != nil {
 				width = combinedBBox.Width()
 				height = combinedBBox.Height()
+				// Store offset needed to bring the combined bbox corner to the expected position
+				bboxOffsetX = -combinedBBox.MinX
+				bboxOffsetY = -combinedBBox.MinY
 			} else {
 				width, height = 100.0, 100.0 // fallback
 			}
@@ -560,7 +582,9 @@ func (c *Combiner) combineWithGroupsAndDistanceInternal(tempFiles []string, scad
 			objectName   string
 			groupObjects []models.Object
 			scadFiles    []models.ScadFile
-		}{meshIDs, objectName, groupObjects, groupScadFiles}
+			bboxOffsetX  float64
+			bboxOffsetY  float64
+		}{meshIDs, objectName, groupObjects, groupScadFiles, bboxOffsetX, bboxOffsetY}
 
 		packingID++
 	}
@@ -582,6 +606,15 @@ func (c *Combiner) combineWithGroupsAndDistanceInternal(tempFiles []string, scad
 		meshIDs := info.meshIDs
 		objectName := info.objectName
 		groupScadFiles := info.scadFiles
+		bboxOffsetX := info.bboxOffsetX
+		bboxOffsetY := info.bboxOffsetY
+
+		if c.Debug {
+			fmt.Printf("DEBUG PACK: %s - packer pos(%.1f,%.1f) size(%.1f,%.1f) offset(%.1f,%.1f) -> final pos(%.1f,%.1f) occupies(%.1f,%.1f)-(%.1f,%.1f)\n",
+				objectName, result.X, result.Y, result.Width, result.Height, bboxOffsetX, bboxOffsetY,
+				result.X+bboxOffsetX, result.Y+bboxOffsetY,
+				result.X, result.Y, result.X+result.Width, result.Y+result.Height)
+		}
 
 		// Determine if we should normalize position
 		normalizePosition := true // default to true
@@ -623,10 +656,11 @@ func (c *Combiner) combineWithGroupsAndDistanceInternal(tempFiles []string, scad
 			objectID := strconv.Itoa(meshIDs[0])
 
 			// Apply rotation and position offsets from ScadFile to the build transform
+			// Add bboxOffset to compensate for rotation moving the object away from expected position
 			scadFile := groupScadFiles[0]
 			buildTransform = geometry.BuildRotationTransform(
 				scadFile.RotationX, scadFile.RotationY, scadFile.RotationZ,
-				result.X+scadFile.PositionX, result.Y+scadFile.PositionY, zOffset+scadFile.PositionZ)
+				result.X+scadFile.PositionX+bboxOffsetX, result.Y+scadFile.PositionY+bboxOffsetY, zOffset+scadFile.PositionZ)
 
 			buildItems = append(buildItems, models.Item{
 				ObjectID:  objectID,
@@ -648,6 +682,7 @@ func (c *Combiner) combineWithGroupsAndDistanceInternal(tempFiles []string, scad
 
 			for i, meshID := range meshIDs {
 				// Apply rotation and position offsets from ScadFile to each component
+				// For multi-part objects, the bboxOffset is applied at the parent level
 				scadFile := groupScadFiles[i]
 				transform := geometry.BuildRotationTransform(
 					scadFile.RotationX, scadFile.RotationY, scadFile.RotationZ,
@@ -672,6 +707,9 @@ func (c *Combiner) combineWithGroupsAndDistanceInternal(tempFiles []string, scad
 			}
 
 			parentObjects = append(parentObjects, parentObject)
+
+			// Apply bboxOffset to parent transform to compensate for rotation
+			buildTransform = geometry.BuildTranslationTransform(result.X+bboxOffsetX, result.Y+bboxOffsetY, zOffset)
 
 			buildItems = append(buildItems, models.Item{
 				ObjectID:  parentID,
@@ -813,6 +851,8 @@ func (c *Combiner) CombineWithPlateGroups(tempFiles []string, plateGroups []mode
 			objectName   string
 			groupObjects []models.Object
 			scadFiles    []models.ScadFile
+			bboxOffsetX  float64
+			bboxOffsetY  float64
 		}
 	}
 
@@ -824,6 +864,8 @@ func (c *Combiner) CombineWithPlateGroups(tempFiles []string, plateGroups []mode
 				objectName   string
 				groupObjects []models.Object
 				scadFiles    []models.ScadFile
+				bboxOffsetX  float64
+				bboxOffsetY  float64
 			}),
 		}
 	}
@@ -842,12 +884,15 @@ func (c *Combiner) CombineWithPlateGroups(tempFiles []string, plateGroups []mode
 
 		// Calculate dimensions for packing
 		var width, height float64
+		var bboxOffsetX, bboxOffsetY float64
 		if len(meshIDs) == 1 {
 			scadFile := groupScadFiles[0]
 			bbox, err := geometry.CalculateRotatedBoundingBox(&groupObjects[0], scadFile.RotationX, scadFile.RotationY, scadFile.RotationZ)
 			if err == nil {
 				width = bbox.Width()
 				height = bbox.Height()
+				bboxOffsetX = -bbox.MinX
+				bboxOffsetY = -bbox.MinY
 			} else {
 				width, height = 50.0, 50.0
 			}
@@ -876,6 +921,8 @@ func (c *Combiner) CombineWithPlateGroups(tempFiles []string, plateGroups []mode
 			if combinedBBox != nil {
 				width = combinedBBox.Width()
 				height = combinedBBox.Height()
+				bboxOffsetX = -combinedBBox.MinX
+				bboxOffsetY = -combinedBBox.MinY
 			} else {
 				width, height = 100.0, 100.0
 			}
@@ -895,7 +942,9 @@ func (c *Combiner) CombineWithPlateGroups(tempFiles []string, plateGroups []mode
 			objectName   string
 			groupObjects []models.Object
 			scadFiles    []models.ScadFile
-		}{meshIDs, objectName, groupObjects, groupScadFiles}
+			bboxOffsetX  float64
+			bboxOffsetY  float64
+		}{meshIDs, objectName, groupObjects, groupScadFiles, bboxOffsetX, bboxOffsetY}
 	}
 
 	// Track which build items belong to which plate
@@ -927,6 +976,8 @@ func (c *Combiner) CombineWithPlateGroups(tempFiles []string, plateGroups []mode
 			meshIDs := objInfo.meshIDs
 			objectName := objInfo.objectName
 			groupScadFiles := objInfo.scadFiles
+			bboxOffsetX := objInfo.bboxOffsetX
+			bboxOffsetY := objInfo.bboxOffsetY
 
 			// Find normalization setting
 			normalizePosition := true
@@ -964,9 +1015,10 @@ func (c *Combiner) CombineWithPlateGroups(tempFiles []string, plateGroups []mode
 			if len(meshIDs) == 1 {
 				objectID = strconv.Itoa(meshIDs[0])
 				scadFile := groupScadFiles[0]
+				// Add bboxOffset to compensate for rotation moving the object away from expected position
 				buildTransform := geometry.BuildRotationTransform(
 					scadFile.RotationX, scadFile.RotationY, scadFile.RotationZ,
-					posX+scadFile.PositionX, posY+scadFile.PositionY, zOffset+scadFile.PositionZ)
+					posX+scadFile.PositionX+bboxOffsetX, posY+scadFile.PositionY+bboxOffsetY, zOffset+scadFile.PositionZ)
 
 				buildItems = append(buildItems, models.Item{
 					ObjectID:  objectID,
@@ -1006,7 +1058,8 @@ func (c *Combiner) CombineWithPlateGroups(tempFiles []string, plateGroups []mode
 					},
 				})
 
-				buildTransform := geometry.BuildTranslationTransform(posX, posY, zOffset)
+				// Apply bboxOffset to parent transform to compensate for rotation
+				buildTransform := geometry.BuildTranslationTransform(posX+bboxOffsetX, posY+bboxOffsetY, zOffset)
 				buildItems = append(buildItems, models.Item{
 					ObjectID:  parentID,
 					Transform: buildTransform,

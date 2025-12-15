@@ -315,9 +315,20 @@ type Context struct {
 	ConfigDir     string   // Directory where the config.yaml file is located
 	OriginalSTLs  []string // Store original STL filenames for proper naming
 	PlateWidth    float64  // Width of a single plate (for multi-plate positioning)
+	Debug         bool     // Enable debug output
 }
 
 var buildContext = &Context{}
+
+// SetDebug enables or disables debug mode
+func SetDebug(debug bool) {
+	buildContext.Debug = debug
+}
+
+// IsDebug returns true if debug mode is enabled
+func IsDebug() bool {
+	return buildContext.Debug
+}
 
 // ParseObjectGroupsStep parses command-line object groups into YAML config
 type ParseObjectGroupsStep struct {
@@ -649,6 +660,7 @@ func (s *CombineWithGroupsStep) Execute() error {
 	ui.PrintInfo("Merging objects and materials...")
 
 	combiner := threemf.NewCombiner()
+	combiner.SetDebug(buildContext.Debug)
 
 	// Use packing distance from config if available, otherwise default to 10.0
 	packingDistance := 10.0

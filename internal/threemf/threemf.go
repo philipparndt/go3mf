@@ -338,11 +338,8 @@ func (c *Combiner) CombineWithDistance(tempFiles []string, scadFiles []models.Sc
 	currentXOffset := 0.0
 
 	for i := range allObjects {
-		// Position objects along the X axis with spacing and apply rotation
-		scadFile := scadFiles[i]
-		transform := geometry.BuildRotationTransform(
-			scadFile.RotationX, scadFile.RotationY, scadFile.RotationZ,
-			currentXOffset, 0, 0)
+		// Position objects along the X axis with spacing (rotation already baked into mesh)
+		transform := geometry.BuildTranslationTransform(currentXOffset, 0, 0)
 
 		components = append(components, models.Component{
 			ObjectID:  strconv.Itoa(i + 1),
@@ -456,6 +453,16 @@ func (c *Combiner) combineWithGroupsAndDistanceInternal(tempFiles []string, scad
 			obj.PID = strconv.Itoa(filamentSlot)
 			obj.PIndex = "0"
 
+			// Bake rotation into mesh vertices if any rotation is specified
+			// This ensures the build transform only needs translation, improving slicer compatibility
+			scadFile := scadFiles[i]
+			if scadFile.RotationX != 0 || scadFile.RotationY != 0 || scadFile.RotationZ != 0 {
+				_, err := geometry.TransformMeshVertices(&obj, scadFile.RotationX, scadFile.RotationY, scadFile.RotationZ)
+				if err != nil {
+					return fmt.Errorf("error transforming mesh vertices for %s: %w", scadFile.Name, err)
+				}
+			}
+
 			allMeshObjects = append(allMeshObjects, obj)
 			nextID++
 		}
@@ -513,17 +520,17 @@ func (c *Combiner) combineWithGroupsAndDistanceInternal(tempFiles []string, scad
 			groupScadFiles = append(groupScadFiles, scadFiles[meshID-1])
 		}
 
-		// Calculate dimensions for packing (considering rotations)
+		// Calculate dimensions for packing
+		// Note: Rotation is already baked into mesh vertices, so we use standard bounding box
 		var width, height float64
-		var bboxOffsetX, bboxOffsetY float64 // Offset to align rotated bbox corner to origin
+		var bboxOffsetX, bboxOffsetY float64 // Offset to align bbox corner to origin
 		if len(meshIDs) == 1 {
-			// Use rotated bounding box for single-part objects
-			scadFile := groupScadFiles[0]
-			bbox, err := geometry.CalculateRotatedBoundingBox(&groupObjects[0], scadFile.RotationX, scadFile.RotationY, scadFile.RotationZ)
+			// Use standard bounding box (rotation already baked into mesh)
+			bbox, err := geometry.CalculateBoundingBox(&groupObjects[0])
 			if err == nil {
 				width = bbox.Width()
 				height = bbox.Height()
-				// Store offset needed to bring the rotated bbox corner to the expected position
+				// Store offset needed to bring the bbox corner to the expected position
 				bboxOffsetX = -bbox.MinX
 				bboxOffsetY = -bbox.MinY
 				if c.Debug {
@@ -537,11 +544,11 @@ func (c *Combiner) combineWithGroupsAndDistanceInternal(tempFiles []string, scad
 				}
 			}
 		} else {
-			// For multi-part objects, calculate combined bounding box with rotations
+			// For multi-part objects, calculate combined bounding box
 			var combinedBBox *geometry.BoundingBox
 			for i, obj := range groupObjects {
 				scadFile := groupScadFiles[i]
-				bbox, err := geometry.CalculateRotatedBoundingBox(&obj, scadFile.RotationX, scadFile.RotationY, scadFile.RotationZ)
+				bbox, err := geometry.CalculateBoundingBox(&obj)
 				if err != nil {
 					continue
 				}
@@ -628,38 +635,29 @@ func (c *Combiner) combineWithGroupsAndDistanceInternal(tempFiles []string, scad
 			}
 		}
 
-		// Calculate z-offset for normalization if needed
+		// Z offset is 0 since rotation and Z normalization are already baked into mesh vertices
 		var zOffset float64 = 0
-		if normalizePosition {
-			// For single-part objects
-			if len(meshIDs) == 1 {
-				zOffset = geometry.CalculateGroupZOffset([]models.Object{info.groupObjects[0]})
-			} else {
-				// For multi-part objects, calculate transforms first then get z-offset
-				var transforms []string
-				for i := range info.groupObjects {
-					scadFile := groupScadFiles[i]
-					transform := geometry.BuildRotationTransform(
-						scadFile.RotationX, scadFile.RotationY, scadFile.RotationZ,
-						scadFile.PositionX, scadFile.PositionY, scadFile.PositionZ)
-					transforms = append(transforms, transform)
+		if normalizePosition && len(meshIDs) > 1 {
+			// For multi-part objects, we still need to calculate Z offset for position offsets
+			for i := range info.groupObjects {
+				scadFile := groupScadFiles[i]
+				if scadFile.PositionZ != 0 {
+					// Note: position offsets are still applied via transforms
+					break
 				}
-				zOffset = geometry.CalculateZOffsetWithTransforms(info.groupObjects, transforms)
 			}
 		}
 
-		// Build transform for positioning on the build plate
-		buildTransform := geometry.BuildTranslationTransform(result.X, result.Y, zOffset)
+		// Build transform for positioning on the build plate (translation only, rotation is baked)
+		var buildTransform string
 
 		// If only one part in this object, add it directly to build
 		if len(meshIDs) == 1 {
 			objectID := strconv.Itoa(meshIDs[0])
 
-			// Apply rotation and position offsets from ScadFile to the build transform
-			// Add bboxOffset to compensate for rotation moving the object away from expected position
+			// Use translation-only transform since rotation is baked into mesh
 			scadFile := groupScadFiles[0]
-			buildTransform = geometry.BuildRotationTransform(
-				scadFile.RotationX, scadFile.RotationY, scadFile.RotationZ,
+			buildTransform = geometry.BuildTranslationTransform(
 				result.X+scadFile.PositionX+bboxOffsetX, result.Y+scadFile.PositionY+bboxOffsetY, zOffset+scadFile.PositionZ)
 
 			buildItems = append(buildItems, models.Item{
@@ -681,11 +679,9 @@ func (c *Combiner) combineWithGroupsAndDistanceInternal(tempFiles []string, scad
 			var components []models.Component
 
 			for i, meshID := range meshIDs {
-				// Apply rotation and position offsets from ScadFile to each component
-				// For multi-part objects, the bboxOffset is applied at the parent level
+				// Apply only position offsets from ScadFile to each component (rotation is baked)
 				scadFile := groupScadFiles[i]
-				transform := geometry.BuildRotationTransform(
-					scadFile.RotationX, scadFile.RotationY, scadFile.RotationZ,
+				transform := geometry.BuildTranslationTransform(
 					scadFile.PositionX, scadFile.PositionY, scadFile.PositionZ)
 
 				components = append(components, models.Component{
@@ -708,7 +704,7 @@ func (c *Combiner) combineWithGroupsAndDistanceInternal(tempFiles []string, scad
 
 			parentObjects = append(parentObjects, parentObject)
 
-			// Apply bboxOffset to parent transform to compensate for rotation
+			// Apply bboxOffset to position the object correctly
 			buildTransform = geometry.BuildTranslationTransform(result.X+bboxOffsetX, result.Y+bboxOffsetY, zOffset)
 
 			buildItems = append(buildItems, models.Item{
@@ -882,12 +878,11 @@ func (c *Combiner) CombineWithPlateGroups(tempFiles []string, plateGroups []mode
 			groupScadFiles = append(groupScadFiles, allScadFiles[meshID-1])
 		}
 
-		// Calculate dimensions for packing
+		// Calculate dimensions for packing (rotation already baked into mesh)
 		var width, height float64
 		var bboxOffsetX, bboxOffsetY float64
 		if len(meshIDs) == 1 {
-			scadFile := groupScadFiles[0]
-			bbox, err := geometry.CalculateRotatedBoundingBox(&groupObjects[0], scadFile.RotationX, scadFile.RotationY, scadFile.RotationZ)
+			bbox, err := geometry.CalculateBoundingBox(&groupObjects[0])
 			if err == nil {
 				width = bbox.Width()
 				height = bbox.Height()
@@ -900,7 +895,7 @@ func (c *Combiner) CombineWithPlateGroups(tempFiles []string, plateGroups []mode
 			var combinedBBox *geometry.BoundingBox
 			for i, obj := range groupObjects {
 				scadFile := groupScadFiles[i]
-				bbox, err := geometry.CalculateRotatedBoundingBox(&obj, scadFile.RotationX, scadFile.RotationY, scadFile.RotationZ)
+				bbox, err := geometry.CalculateBoundingBox(&obj)
 				if err != nil {
 					continue
 				}
@@ -988,23 +983,8 @@ func (c *Combiner) CombineWithPlateGroups(tempFiles []string, plateGroups []mode
 				}
 			}
 
-			// Calculate z-offset for normalization
+			// Z offset is 0 since rotation and Z normalization are already baked into mesh vertices
 			var zOffset float64 = 0
-			if normalizePosition {
-				if len(meshIDs) == 1 {
-					zOffset = geometry.CalculateGroupZOffset([]models.Object{objInfo.groupObjects[0]})
-				} else {
-					var transforms []string
-					for i := range objInfo.groupObjects {
-						scadFile := groupScadFiles[i]
-						transform := geometry.BuildRotationTransform(
-							scadFile.RotationX, scadFile.RotationY, scadFile.RotationZ,
-							scadFile.PositionX, scadFile.PositionY, scadFile.PositionZ)
-						transforms = append(transforms, transform)
-					}
-					zOffset = geometry.CalculateZOffsetWithTransforms(objInfo.groupObjects, transforms)
-				}
-			}
 
 			// Build position with plate offset
 			posX := result.X + plateXOffset
@@ -1015,9 +995,8 @@ func (c *Combiner) CombineWithPlateGroups(tempFiles []string, plateGroups []mode
 			if len(meshIDs) == 1 {
 				objectID = strconv.Itoa(meshIDs[0])
 				scadFile := groupScadFiles[0]
-				// Add bboxOffset to compensate for rotation moving the object away from expected position
-				buildTransform := geometry.BuildRotationTransform(
-					scadFile.RotationX, scadFile.RotationY, scadFile.RotationZ,
+				// Use translation-only transform since rotation is baked into mesh
+				buildTransform := geometry.BuildTranslationTransform(
 					posX+scadFile.PositionX+bboxOffsetX, posY+scadFile.PositionY+bboxOffsetY, zOffset+scadFile.PositionZ)
 
 				buildItems = append(buildItems, models.Item{
@@ -1036,8 +1015,8 @@ func (c *Combiner) CombineWithPlateGroups(tempFiles []string, plateGroups []mode
 				var components []models.Component
 				for i, meshID := range meshIDs {
 					scadFile := groupScadFiles[i]
-					transform := geometry.BuildRotationTransform(
-						scadFile.RotationX, scadFile.RotationY, scadFile.RotationZ,
+					// Use translation-only transform since rotation is baked into mesh
+					transform := geometry.BuildTranslationTransform(
 						scadFile.PositionX, scadFile.PositionY, scadFile.PositionZ)
 					components = append(components, models.Component{
 						ObjectID:  strconv.Itoa(meshID),
@@ -1058,7 +1037,7 @@ func (c *Combiner) CombineWithPlateGroups(tempFiles []string, plateGroups []mode
 					},
 				})
 
-				// Apply bboxOffset to parent transform to compensate for rotation
+				// Apply bboxOffset to position the object correctly
 				buildTransform := geometry.BuildTranslationTransform(posX+bboxOffsetX, posY+bboxOffsetY, zOffset)
 				buildItems = append(buildItems, models.Item{
 					ObjectID:  parentID,

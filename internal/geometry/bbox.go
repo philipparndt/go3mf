@@ -312,3 +312,92 @@ func CalculateRotatedBoundingBox(obj *models.Object, rotX, rotY, rotZ float64) (
 	return rotatedBBox, nil
 }
 
+// TransformMeshVertices applies rotation and Z normalization to mesh vertices in place.
+// This "bakes" the rotation into the mesh so only translation is needed in the build transform.
+// Returns the Z offset that was applied (for reference).
+func TransformMeshVertices(obj *models.Object, rotX, rotY, rotZ float64) (float64, error) {
+	if obj.Mesh == nil || obj.Mesh.Vertices == nil {
+		return 0, fmt.Errorf("object has no mesh vertices")
+	}
+
+	// Parse vertices
+	var vertices Vertices
+	verticesXML := fmt.Sprintf("<vertices>%s</vertices>", obj.Mesh.Vertices.RawContent)
+	if err := xml.Unmarshal([]byte(verticesXML), &vertices); err != nil {
+		return 0, fmt.Errorf("failed to parse mesh vertices: %w", err)
+	}
+
+	if len(vertices.Vertex) == 0 {
+		return 0, fmt.Errorf("mesh has no vertices")
+	}
+
+	// Build rotation matrix (same as CalculateRotatedBoundingBox)
+	rx := rotX * math.Pi / 180.0
+	ry := rotY * math.Pi / 180.0
+	rz := rotZ * math.Pi / 180.0
+
+	cosX, sinX := math.Cos(rx), math.Sin(rx)
+	cosY, sinY := math.Cos(ry), math.Sin(ry)
+	cosZ, sinZ := math.Cos(rz), math.Sin(rz)
+
+	m11 := cosY * cosZ
+	m12 := cosY * sinZ
+	m13 := -sinY
+
+	m21 := sinX*sinY*cosZ - cosX*sinZ
+	m22 := sinX*sinY*sinZ + cosX*cosZ
+	m23 := sinX * cosY
+
+	m31 := cosX*sinY*cosZ + sinX*sinZ
+	m32 := cosX*sinY*sinZ - sinX*cosZ
+	m33 := cosX * cosY
+
+	// Transform vertices and find minZ
+	type transformedVertex struct {
+		x, y, z float64
+	}
+	transformed := make([]transformedVertex, len(vertices.Vertex))
+	minZ := math.MaxFloat64
+
+	for i, v := range vertices.Vertex {
+		x, err := strconv.ParseFloat(v.X, 64)
+		if err != nil {
+			continue
+		}
+		y, err := strconv.ParseFloat(v.Y, 64)
+		if err != nil {
+			continue
+		}
+		z, err := strconv.ParseFloat(v.Z, 64)
+		if err != nil {
+			continue
+		}
+
+		// Apply rotation
+		newX := m11*x + m21*y + m31*z
+		newY := m12*x + m22*y + m32*z
+		newZ := m13*x + m23*y + m33*z
+
+		transformed[i] = transformedVertex{newX, newY, newZ}
+		if newZ < minZ {
+			minZ = newZ
+		}
+	}
+
+	// Apply Z normalization (shift all vertices so minZ = 0)
+	zOffset := -minZ
+
+	// Build new vertices XML
+	var newVerticesXML string
+	for _, tv := range transformed {
+		newVerticesXML += fmt.Sprintf("\n\t\t\t\t\t<vertex x=\"%.6f\" y=\"%.6f\" z=\"%.6f\"/>",
+			tv.x, tv.y, tv.z+zOffset)
+	}
+	newVerticesXML += "\n\t\t\t\t"
+
+	// Update the mesh
+	obj.Mesh.Vertices.RawContent = newVerticesXML
+
+	return zOffset, nil
+}
+

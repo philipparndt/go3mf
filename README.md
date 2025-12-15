@@ -75,9 +75,13 @@ objects:
 
 **Configuration Fields:**
 - `output` - Output 3MF file path (required)
+- `printer` - Printer type for plate size: H2D, X1C, P1S, A1, A1mini (optional, default: X1C)
 - `packing_distance` - Distance between objects in mm (optional, default: 10.0)
 - `packing_algorithm` - Packing algorithm: "default" or "compact" (optional, default: "default")
-- `objects` - Array of objects (required, at least one)
+- `plates` - Array of plates for multi-plate builds (optional, alternative to `objects`)
+  - `name` - Plate name (optional)
+  - `objects` - Array of objects on this plate
+- `objects` - Array of objects (required if not using `plates`)
   - `name` - Object name (required)
   - `count` - Number of copies of this object (optional, default: 1)
   - `normalize_position` - Place object at ground level (optional, default: true)
@@ -163,6 +167,41 @@ go3mf combine example/plate-config.yaml
 # Complete config formats demo
 go3mf build example/config-formats-demo.yaml
 ```
+
+**Multi-Plate Builds:**
+
+For large projects, you can organize objects across multiple build plates:
+
+```yaml
+output: project.3mf
+printer: H2D  # Sets plate size (350x350mm for H2D)
+
+plates:
+  - name: "Plate 1 - Main Parts"
+    objects:
+      - name: MainBody
+        parts:
+          - name: body
+            file: body.stl
+            rotation_x: 90
+
+  - name: "Plate 2 - Small Parts"
+    objects:
+      - name: Connector
+        count: 4
+        parts:
+          - name: connector
+            file: connector.stl
+```
+
+**Supported Printers and Plate Sizes:**
+| Printer | Plate Size |
+|---------|------------|
+| H2D | 350 x 350 mm |
+| X1, X1C, X1E | 256 x 256 mm |
+| P1S, P1P | 256 x 256 mm |
+| A1 | 256 x 256 mm |
+| A1mini | 180 x 180 mm |
 
 **Position Normalization and Relative Positioning:**
 

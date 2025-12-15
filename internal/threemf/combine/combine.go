@@ -352,19 +352,21 @@ func writeModelSettings(outZip *zip.Writer, scadFiles []models.ScadFile) error {
 				Parts: parts,
 			},
 		},
-		Plate: models.Plate{
-			Metadata: []models.SettingsMetadata{
-				{Key: "plater_id", Value: "1"},
-				{Key: "plater_name", Value: ""},
-				{Key: "locked", Value: "false"},
-				{Key: "filament_map_mode", Value: "Auto For Flush"},
-			},
-			ModelInstances: []models.ModelInstance{
-				{
-					Metadata: []models.SettingsMetadata{
-						{Key: "object_id", Value: parentID},
-						{Key: "instance_id", Value: "0"},
-						{Key: "identify_id", Value: "1"},
+		Plates: []models.Plate{
+			{
+				Metadata: []models.SettingsMetadata{
+					{Key: "plater_id", Value: "1"},
+					{Key: "plater_name", Value: ""},
+					{Key: "locked", Value: "false"},
+					{Key: "filament_map_mode", Value: "Auto For Flush"},
+				},
+				ModelInstances: []models.ModelInstance{
+					{
+						Metadata: []models.SettingsMetadata{
+							{Key: "object_id", Value: parentID},
+							{Key: "instance_id", Value: "0"},
+							{Key: "identify_id", Value: "1"},
+						},
 					},
 				},
 			},

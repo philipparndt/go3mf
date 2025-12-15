@@ -137,12 +137,51 @@ type ObjectGroup struct {
 	NormalizePosition bool       // If true, normalize z-position to ground level
 }
 
+// PlateGroup represents a build plate with its objects
+type PlateGroup struct {
+	Name    string        // Plate name (optional)
+	Objects []ObjectGroup // Objects on this plate
+}
+
 // YamlConfig represents the complete YAML configuration file
 type YamlConfig struct {
-	Output             string           `yaml:"output"`
-	PackingDistance    float64          `yaml:"packing_distance,omitempty"`   // Distance between objects in mm (default: 10.0)
-	PackingAlgorithm   string           `yaml:"packing_algorithm,omitempty"`  // Packing algorithm: "default" or "compact" (default: "default")
-	Objects            []YamlObject     `yaml:"objects"`
+	Output           string       `yaml:"output"`
+	Printer          string       `yaml:"printer,omitempty"`            // Printer alias for plate size: H2D, A1mini, A1, X1C, P1S, etc.
+	PackingDistance  float64      `yaml:"packing_distance,omitempty"`   // Distance between objects in mm (default: 10.0)
+	PackingAlgorithm string       `yaml:"packing_algorithm,omitempty"`  // Packing algorithm: "default" or "compact" (default: "default")
+	Plates           []YamlPlate  `yaml:"plates,omitempty"`             // Optional: plates containing objects (for multi-plate builds)
+	Objects          []YamlObject `yaml:"objects,omitempty"`            // Objects (when not using plates)
+}
+
+// YamlPlate represents a build plate in the model
+type YamlPlate struct {
+	Name    string       `yaml:"name,omitempty"` // Plate name (optional)
+	Objects []YamlObject `yaml:"objects"`        // Objects on this plate
+}
+
+// PrinterPlateSize represents the build plate dimensions for a printer
+type PrinterPlateSize struct {
+	Width  float64
+	Height float64
+}
+
+// GetPrinterPlateSize returns the plate size for known printer aliases
+func GetPrinterPlateSize(printer string) PrinterPlateSize {
+	switch printer {
+	case "H2D":
+		return PrinterPlateSize{Width: 350, Height: 350}
+	case "X1", "X1C", "X1E":
+		return PrinterPlateSize{Width: 256, Height: 256}
+	case "P1S", "P1P":
+		return PrinterPlateSize{Width: 256, Height: 256}
+	case "A1":
+		return PrinterPlateSize{Width: 256, Height: 256}
+	case "A1mini", "A1-mini", "A1_mini":
+		return PrinterPlateSize{Width: 180, Height: 180}
+	default:
+		// Default to X1C size
+		return PrinterPlateSize{Width: 256, Height: 256}
+	}
 }
 
 // YamlObject represents a single object in the model
@@ -172,7 +211,7 @@ type YamlPart struct {
 type ModelSettings struct {
 	XMLName  xml.Name         `xml:"config"`
 	Objects  []SettingsObject `xml:"object"`
-	Plate    Plate            `xml:"plate"`
+	Plates   []Plate          `xml:"plate"`
 	Assemble Assemble         `xml:"assemble"`
 }
 

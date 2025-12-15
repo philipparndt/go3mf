@@ -309,10 +309,12 @@ type Context struct {
 	YAMLConfig    *models.YamlConfig
 	SCADFiles     []models.ScadFile
 	ObjectGroups  []models.ObjectGroup // Object groups with normalization settings
+	PlateGroups   []models.PlateGroup  // Plate groups for multi-plate builds
 	RenderedFiles []string
 	OutputFile    string
 	ConfigDir     string   // Directory where the config.yaml file is located
 	OriginalSTLs  []string // Store original STL filenames for proper naming
+	PlateWidth    float64  // Width of a single plate (for multi-plate positioning)
 }
 
 var buildContext = &Context{}
@@ -506,8 +508,15 @@ func (s *ValidateFilesStep) Execute() error {
 		loader := config.NewLoader()
 		scadFiles := loader.ConvertToScadFiles(buildContext.YAMLConfig)
 		objectGroups := loader.ConvertToObjectGroups(buildContext.YAMLConfig)
+		plateGroups := loader.ConvertToPlateGroups(buildContext.YAMLConfig)
 		buildContext.SCADFiles = scadFiles
 		buildContext.ObjectGroups = objectGroups
+		buildContext.PlateGroups = plateGroups
+
+		// Set plate width based on printer setting
+		plateSize := models.GetPrinterPlateSize(buildContext.YAMLConfig.Printer)
+		buildContext.PlateWidth = plateSize.Width
+
 		for _, scad := range scadFiles {
 			allPaths = append(allPaths, scad.Path)
 		}
@@ -653,8 +662,12 @@ func (s *CombineWithGroupsStep) Execute() error {
 		packingAlgo = models.NewPackingAlgorithm(buildContext.YAMLConfig.PackingAlgorithm)
 	}
 
-	// Use CombineWithObjectGroups if we have object groups with settings, otherwise fall back to CombineWithGroupsAndDistance
-	if len(buildContext.ObjectGroups) > 0 {
+	// Use CombineWithPlateGroups if we have multiple plates, otherwise fall back to existing methods
+	if len(buildContext.PlateGroups) > 1 {
+		if err := combiner.CombineWithPlateGroups(buildContext.RenderedFiles, buildContext.PlateGroups, buildContext.OutputFile, packingDistance, packingAlgo, buildContext.PlateWidth); err != nil {
+			return err
+		}
+	} else if len(buildContext.ObjectGroups) > 0 {
 		if err := combiner.CombineWithObjectGroups(buildContext.RenderedFiles, buildContext.ObjectGroups, buildContext.OutputFile, packingDistance, packingAlgo); err != nil {
 			return err
 		}

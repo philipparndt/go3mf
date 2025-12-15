@@ -44,6 +44,19 @@ func (l *Loader) Load(configPath string) (*models.YamlConfig, error) {
 		return nil, fmt.Errorf("failed to get absolute path of config directory: %w", err)
 	}
 
+	// Handle paths in plates
+	for i := range config.Plates {
+		for j := range config.Plates[i].Objects {
+			for k := range config.Plates[i].Objects[j].Parts {
+				part := &config.Plates[i].Objects[j].Parts[k]
+				if !filepath.IsAbs(part.File) {
+					part.File = filepath.Join(absConfigDir, part.File)
+				}
+			}
+		}
+	}
+
+	// Handle paths in direct objects
 	for i := range config.Objects {
 		for j := range config.Objects[i].Parts {
 			part := &config.Objects[i].Parts[j]
@@ -62,44 +75,74 @@ func (l *Loader) Validate(config *models.YamlConfig, configPath string) error {
 		return fmt.Errorf("output file must be specified")
 	}
 
-	if len(config.Objects) == 0 {
-		return fmt.Errorf("at least one object must be defined")
+	// Must have either objects or plates defined
+	if len(config.Objects) == 0 && len(config.Plates) == 0 {
+		return fmt.Errorf("at least one object or plate must be defined")
+	}
+
+	// Cannot mix plates and objects at the top level
+	if len(config.Objects) > 0 && len(config.Plates) > 0 {
+		return fmt.Errorf("cannot mix 'objects' and 'plates' at top level - use one or the other")
 	}
 
 	configDir := filepath.Dir(configPath)
 
-	for i, obj := range config.Objects {
-		if obj.Name == "" {
-			return fmt.Errorf("object %d: name is required", i)
+	// If using plates, validate each plate's objects
+	if len(config.Plates) > 0 {
+		for plateIdx, plate := range config.Plates {
+			if len(plate.Objects) == 0 {
+				return fmt.Errorf("plate %d: at least one object must be defined", plateIdx+1)
+			}
+			for i, obj := range plate.Objects {
+				if err := l.validateObject(obj, i, configDir, fmt.Sprintf("plate %d, ", plateIdx+1)); err != nil {
+					return err
+				}
+			}
+		}
+	} else {
+		// Validate direct objects
+		for i, obj := range config.Objects {
+			if err := l.validateObject(obj, i, configDir, ""); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// validateObject validates a single object configuration
+func (l *Loader) validateObject(obj models.YamlObject, index int, configDir, prefix string) error {
+	if obj.Name == "" {
+		return fmt.Errorf("%sobject %d: name is required", prefix, index)
+	}
+
+	if len(obj.Parts) == 0 {
+		return fmt.Errorf("%sobject %s: at least one part must be defined", prefix, obj.Name)
+	}
+
+	for j, part := range obj.Parts {
+		if part.Name == "" {
+			return fmt.Errorf("%sobject %s, part %d: name is required", prefix, obj.Name, j)
 		}
 
-		if len(obj.Parts) == 0 {
-			return fmt.Errorf("object %s: at least one part must be defined", obj.Name)
+		if part.File == "" {
+			return fmt.Errorf("%sobject %s, part %s: file is required", prefix, obj.Name, part.Name)
 		}
 
-		for j, part := range obj.Parts {
-			if part.Name == "" {
-				return fmt.Errorf("object %s, part %d: name is required", obj.Name, j)
-			}
+		// Check if file exists (handle relative paths)
+		filePath := part.File
+		if !filepath.IsAbs(filePath) {
+			filePath = filepath.Join(configDir, filePath)
+		}
 
-			if part.File == "" {
-				return fmt.Errorf("object %s, part %s: file is required", obj.Name, part.Name)
-			}
+		if _, err := os.Stat(filePath); err != nil {
+			return fmt.Errorf("%sobject %s, part %s: file not found: %s", prefix, obj.Name, part.Name, part.File)
+		}
 
-			// Check if file exists (handle relative paths)
-			filePath := part.File
-			if !filepath.IsAbs(filePath) {
-				filePath = filepath.Join(configDir, filePath)
-			}
-
-			if _, err := os.Stat(filePath); err != nil {
-				return fmt.Errorf("object %s, part %s: file not found: %s", obj.Name, part.Name, part.File)
-			}
-
-			// Validate filament slot
-			if part.Filament < 0 || part.Filament > 4 {
-				return fmt.Errorf("object %s, part %s: filament must be 0-4 (0=auto, 1-4=AMS slots)", obj.Name, part.Name)
-			}
+		// Validate filament slot
+		if part.Filament < 0 || part.Filament > 4 {
+			return fmt.Errorf("%sobject %s, part %s: filament must be 0-4 (0=auto, 1-4=AMS slots)", prefix, obj.Name, part.Name)
 		}
 	}
 
@@ -296,6 +339,112 @@ func (l *Loader) ConvertToObjectGroups(config *models.YamlConfig) []models.Objec
 				NormalizePosition: normalizePosition,
 			})
 		}
+	}
+
+	return objectGroups
+}
+
+// ConvertToPlateGroups converts YAML config to PlateGroup list for multi-plate builds
+// If plates are defined in config, returns those. Otherwise returns a single plate with all objects.
+func (l *Loader) ConvertToPlateGroups(config *models.YamlConfig) []models.PlateGroup {
+	var plateGroups []models.PlateGroup
+
+	if len(config.Plates) > 0 {
+		// Use defined plates
+		for plateIdx, plate := range config.Plates {
+			plateName := plate.Name
+			if plateName == "" {
+				plateName = fmt.Sprintf("Plate %d", plateIdx+1)
+			}
+
+			var objectGroups []models.ObjectGroup
+			for _, obj := range plate.Objects {
+				objectGroups = append(objectGroups, l.convertYamlObjectToGroups(obj)...)
+			}
+
+			plateGroups = append(plateGroups, models.PlateGroup{
+				Name:    plateName,
+				Objects: objectGroups,
+			})
+		}
+	} else {
+		// Single plate with all objects
+		plateGroups = append(plateGroups, models.PlateGroup{
+			Name:    "Plate 1",
+			Objects: l.ConvertToObjectGroups(config),
+		})
+	}
+
+	return plateGroups
+}
+
+// convertYamlObjectToGroups converts a single YamlObject to ObjectGroups (handling count)
+func (l *Loader) convertYamlObjectToGroups(obj models.YamlObject) []models.ObjectGroup {
+	var objectGroups []models.ObjectGroup
+
+	// Default normalize_position to true if not specified
+	normalizePosition := true
+	if obj.NormalizePosition != nil {
+		normalizePosition = *obj.NormalizePosition
+	}
+
+	// Determine how many copies of this object to create
+	count := obj.Count
+	if count < 1 {
+		count = 1
+	}
+
+	for copyIdx := 0; copyIdx < count; copyIdx++ {
+		// Generate object name with copy number suffix if count > 1
+		objName := obj.Name
+		if count > 1 {
+			objName = fmt.Sprintf("%s_%d", obj.Name, copyIdx+1)
+		}
+
+		var parts []models.ScadFile
+		for _, part := range obj.Parts {
+			// Create a composite name: object_name/part_name
+			compositeName := objName
+			if len(obj.Parts) > 1 {
+				compositeName = objName + "/" + part.Name
+			}
+
+			// Combine object-level and part-level config files
+			configFiles := make(map[string]string)
+
+			// Start with object-level configs
+			for _, configMap := range obj.Config {
+				for filename, content := range configMap {
+					configFiles[filename] = convertConfigContent(content)
+				}
+			}
+
+			// Override with part-level configs
+			for _, configMap := range part.Config {
+				for filename, content := range configMap {
+					configFiles[filename] = convertConfigContent(content)
+				}
+			}
+
+			parts = append(parts, models.ScadFile{
+				Path:         part.File,
+				Name:         compositeName,
+				FilamentSlot: part.Filament,
+				ConfigFiles:  configFiles,
+				RotationX:    part.RotationX,
+				RotationY:    part.RotationY,
+				RotationZ:    part.RotationZ,
+				PositionX:    part.PositionX,
+				PositionY:    part.PositionY,
+				PositionZ:    part.PositionZ,
+			})
+		}
+
+		objectGroups = append(objectGroups, models.ObjectGroup{
+			Name:              objName,
+			Parts:             parts,
+			NormalizePosition: normalizePosition,
+		})
 	}
 
 	return objectGroups

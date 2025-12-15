@@ -92,15 +92,146 @@ func WriteModelSettings(outZip *zip.Writer, objectGroups []models.ObjectGroup, b
 
 	settings := models.ModelSettings{
 		Objects: settingsObjects,
-		Plate: models.Plate{
+		Plates: []models.Plate{
+			{
+				Metadata: []models.SettingsMetadata{
+					{Key: "plater_id", Value: "1"},
+					{Key: "plater_name", Value: ""},
+					{Key: "locked", Value: "false"},
+					{Key: "filament_map_mode", Value: "Auto For Flush"},
+				},
+				ModelInstances: modelInstances,
+			},
+		},
+		Assemble: models.Assemble{
+			Items: assembleItems,
+		},
+	}
+
+	settingsXML, err := xml.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return fmt.Errorf("error marshaling settings XML: %w", err)
+	}
+
+	writer, err := outZip.Create("Metadata/model_settings.config")
+	if err != nil {
+		return fmt.Errorf("error creating settings entry: %w", err)
+	}
+
+	if _, err := writer.Write([]byte(xml.Header)); err != nil {
+		return fmt.Errorf("error writing XML header: %w", err)
+	}
+
+	if _, err := writer.Write(settingsXML); err != nil {
+		return fmt.Errorf("error writing settings XML: %w", err)
+	}
+
+	return nil
+}
+
+// WriteModelSettingsWithPlates writes the Bambu Studio model_settings.config file with multi-plate support
+func WriteModelSettingsWithPlates(outZip *zip.Writer, objectGroups []models.ObjectGroup, buildItems []models.Item, plateGroups []models.PlateGroup, plateObjectIDs map[int][]string) error {
+	var settingsObjects []models.SettingsObject
+	var assembleItems []models.AssembleItem
+	partID := 1
+	sourceObjectID := 0
+
+	// Create settings object for each group
+	for _, group := range objectGroups {
+		var parts []models.Part
+		totalFaces := 0
+
+		for volumeIndex, scadFile := range group.Parts {
+			filamentSlot := scadFile.FilamentSlot
+			if filamentSlot == 0 {
+				filamentSlot = ((partID - 1) % 4) + 1
+			}
+
+			faceCount := 12
+			totalFaces += faceCount
+
+			metadata := []models.SettingsMetadata{
+				{Key: "name", Value: scadFile.Name},
+				{Key: "matrix", Value: "1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"},
+				{Key: "source_file", Value: "combined.3mf"},
+				{Key: "source_object_id", Value: strconv.Itoa(sourceObjectID)},
+				{Key: "source_volume_id", Value: strconv.Itoa(volumeIndex)},
+			}
+
+			if filamentSlot != 1 {
+				metadata = append(metadata, models.SettingsMetadata{
+					Key:   "extruder",
+					Value: strconv.Itoa(filamentSlot),
+				})
+			}
+
+			parts = append(parts, models.Part{
+				ID:       strconv.Itoa(partID),
+				Subtype:  "normal_part",
+				Metadata: metadata,
+				MeshStat: models.MeshStat{
+					FaceCount: faceCount,
+				},
+			})
+			partID++
+		}
+		sourceObjectID++
+
+		settingsObjects = append(settingsObjects, models.SettingsObject{
+			ID: group.ID,
 			Metadata: []models.SettingsMetadata{
-				{Key: "plater_id", Value: "1"},
-				{Key: "plater_name", Value: ""},
+				{Key: "name", Value: group.Name},
+				{Key: "extruder", Value: "1"},
+				{FaceCount: totalFaces},
+			},
+			Parts: parts,
+		})
+	}
+
+	// Create assemble items from build items
+	for _, item := range buildItems {
+		assembleItems = append(assembleItems, models.AssembleItem{
+			ObjectID:   item.ObjectID,
+			InstanceID: "0",
+			Transform:  item.Transform,
+			Offset:     "0 0 0",
+		})
+	}
+
+	// Create plates with their model instances
+	var plates []models.Plate
+	identifyID := 100 // Start from 100 to avoid conflicts
+
+	for plateIdx, plateGroup := range plateGroups {
+		var modelInstances []models.ModelInstance
+
+		// Add model instances for objects on this plate
+		objectIDs := plateObjectIDs[plateIdx]
+		for _, objectID := range objectIDs {
+			modelInstances = append(modelInstances, models.ModelInstance{
+				Metadata: []models.SettingsMetadata{
+					{Key: "object_id", Value: objectID},
+					{Key: "instance_id", Value: "0"},
+					{Key: "identify_id", Value: strconv.Itoa(identifyID)},
+				},
+			})
+			identifyID++
+		}
+
+		plates = append(plates, models.Plate{
+			Metadata: []models.SettingsMetadata{
+				{Key: "plater_id", Value: strconv.Itoa(plateIdx + 1)},
+				{Key: "plater_name", Value: plateGroup.Name},
 				{Key: "locked", Value: "false"},
 				{Key: "filament_map_mode", Value: "Auto For Flush"},
 			},
 			ModelInstances: modelInstances,
-		},
+		})
+	}
+
+	settings := models.ModelSettings{
+		Objects:  settingsObjects,
+		Plates:   plates,
 		Assemble: models.Assemble{
 			Items: assembleItems,
 		},

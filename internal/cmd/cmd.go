@@ -261,12 +261,12 @@ func (c *InspectCmd) Run() error {
 type ExtractCmd struct {
 	File      string `arg:"" help:"3MF file to extract models from"`
 	OutputDir string `help:"Output directory for STL files (default: current directory)" short:"o" default:"."`
-	Binary    bool   `help:"Output binary STL files instead of ASCII" short:"b"`
+	ASCII     bool   `help:"Output ASCII STL files instead of binary" short:"a"`
 }
 
 func (c *ExtractCmd) Run() error {
 	extractor := extract.NewExtractor()
-	return extractor.Extract(c.File, c.OutputDir, c.Binary)
+	return extractor.Extract(c.File, c.OutputDir, !c.ASCII)
 }
 
 type InitCmd struct {

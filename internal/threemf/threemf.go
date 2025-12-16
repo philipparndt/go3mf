@@ -453,14 +453,13 @@ func (c *Combiner) combineWithGroupsAndDistanceInternal(tempFiles []string, scad
 			obj.PID = strconv.Itoa(filamentSlot)
 			obj.PIndex = "0"
 
-			// Bake rotation into mesh vertices if any rotation is specified
+			// Bake rotation and Z normalization into mesh vertices
 			// This ensures the build transform only needs translation, improving slicer compatibility
+			// Always normalize Z to ground level (minZ = 0), even for objects without rotation
 			scadFile := scadFiles[i]
-			if scadFile.RotationX != 0 || scadFile.RotationY != 0 || scadFile.RotationZ != 0 {
-				_, err := geometry.TransformMeshVertices(&obj, scadFile.RotationX, scadFile.RotationY, scadFile.RotationZ)
-				if err != nil {
-					return fmt.Errorf("error transforming mesh vertices for %s: %w", scadFile.Name, err)
-				}
+			_, err = geometry.TransformMeshVertices(&obj, scadFile.RotationX, scadFile.RotationY, scadFile.RotationZ)
+			if err != nil {
+				return fmt.Errorf("error transforming mesh vertices for %s: %w", scadFile.Name, err)
 			}
 
 			allMeshObjects = append(allMeshObjects, obj)

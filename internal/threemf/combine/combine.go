@@ -23,10 +23,6 @@ func NewCombiner() *Combiner {
 
 // Combine combines multiple 3MF files into one
 func (c *Combiner) Combine(inputFiles []string, outputFile string) error {
-	if len(inputFiles) < 2 {
-		return fmt.Errorf("at least 2 files required for combining")
-	}
-
 	var allObjects []models.Object
 	var scadFiles []models.ScadFile
 

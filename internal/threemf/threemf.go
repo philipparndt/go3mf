@@ -429,6 +429,7 @@ func (c *Combiner) CombineWithGroupsAndDistance(tempFiles []string, scadFiles []
 
 func (c *Combiner) combineWithGroupsAndDistanceInternal(tempFiles []string, scadFiles []models.ScadFile, objectGroups []models.ObjectGroup, outputFile string, packingDistance float64, algorithm models.PackingAlgorithm) error {
 	var allMeshObjects []models.Object
+	meshMinZ := make(map[int]float64) // mesh index -> minZ after rotation
 	nextID := 1
 
 	// Read all models and collect their mesh objects
@@ -453,14 +454,13 @@ func (c *Combiner) combineWithGroupsAndDistanceInternal(tempFiles []string, scad
 			obj.PID = strconv.Itoa(filamentSlot)
 			obj.PIndex = "0"
 
-			// Bake rotation and Z normalization into mesh vertices
-			// This ensures the build transform only needs translation, improving slicer compatibility
-			// Always normalize Z to ground level (minZ = 0), even for objects without rotation
+			// Apply rotation only (no Z normalization yet - will be done at group level)
 			scadFile := scadFiles[i]
-			_, err = geometry.TransformMeshVertices(&obj, scadFile.RotationX, scadFile.RotationY, scadFile.RotationZ)
+			minZ, err := geometry.RotateMeshVertices(&obj, scadFile.RotationX, scadFile.RotationY, scadFile.RotationZ)
 			if err != nil {
-				return fmt.Errorf("error transforming mesh vertices for %s: %w", scadFile.Name, err)
+				return fmt.Errorf("error rotating mesh vertices for %s: %w", scadFile.Name, err)
 			}
+			meshMinZ[i] = minZ
 
 			allMeshObjects = append(allMeshObjects, obj)
 			nextID++
@@ -593,6 +593,46 @@ func (c *Combiner) combineWithGroupsAndDistanceInternal(tempFiles []string, scad
 		}{meshIDs, objectName, groupObjects, groupScadFiles, bboxOffsetX, bboxOffsetY}
 
 		packingID++
+	}
+
+	// Apply group-level Z normalization
+	// For each object group, calculate the minimum Z (considering PositionZ offsets) and normalize
+	for _, info := range objectInfoMap {
+		// Determine if we should normalize position for this group
+		normalizePosition := true // default to true
+		if objectGroups != nil {
+			for _, og := range objectGroups {
+				if og.Name == info.objectName {
+					normalizePosition = og.NormalizePosition
+					break
+				}
+			}
+		}
+
+		if !normalizePosition {
+			continue
+		}
+
+		// Calculate the minimum Z across all parts in this group (considering PositionZ)
+		groupMinZ := math.MaxFloat64
+		for i, meshID := range info.meshIDs {
+			partMinZ := meshMinZ[meshID-1] // meshMinZ is 0-indexed, meshID is 1-indexed
+			partPositionZ := info.scadFiles[i].PositionZ
+			effectiveMinZ := partMinZ + partPositionZ
+			if effectiveMinZ < groupMinZ {
+				groupMinZ = effectiveMinZ
+			}
+		}
+
+		// Apply the group-level Z offset to normalize to ground level
+		if groupMinZ != math.MaxFloat64 && groupMinZ != 0 {
+			zOffset := -groupMinZ
+			for _, meshID := range info.meshIDs {
+				if err := geometry.ApplyZOffset(&allMeshObjects[meshID-1], zOffset); err != nil {
+					return fmt.Errorf("error applying Z offset to mesh: %w", err)
+				}
+			}
+		}
 	}
 
 	// Use bin packing algorithm to arrange objects based on selected algorithm

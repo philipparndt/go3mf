@@ -85,18 +85,15 @@ func (c *CombineCmd) Run() error {
 		os.Exit(1)
 	}
 
-	// Determine output file if not specified
-	outputFile := c.Output
-	if outputFile == "" {
-		outputFile = "combined.3mf"
-	}
-
 	// Set debug mode if requested
 	buildplan.SetDebug(c.Debug)
 
-	// Create build plan
+	// Create build plan. The output is passed exactly as it was given —
+	// defaulting it here would tell a YAML config that -o was set to
+	// `combined.3mf` when it was not set at all, and the config's own `output:`
+	// would lose to a name nobody typed.
 	planner := buildplan.NewPlanner()
-	plan, err := planner.CreatePlan(c.Files, c.Objects, outputFile)
+	plan, err := planner.CreatePlan(c.Files, c.Objects, c.Output)
 	if err != nil {
 		ui.PrintError("Failed to create build plan: " + err.Error())
 		os.Exit(1)

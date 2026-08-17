@@ -46,6 +46,10 @@ type BuildPlan struct {
 	OutputFile string
 }
 
+// DefaultOutputFile is what an output is called when nobody says otherwise and
+// the input has no opinion of its own.
+const DefaultOutputFile = "combined.3mf"
+
 // Planner creates build plans based on input files
 type Planner struct{}
 
@@ -56,6 +60,15 @@ func NewPlanner() *Planner {
 
 // CreatePlan analyzes input files and creates an execution plan
 func (p *Planner) CreatePlan(inputs []string, objects []ObjectGroup, outputFile string) (*BuildPlan, error) {
+	// An empty outputFile means nobody passed -o. A YAML config names its own
+	// output and is the only input that can, so it is the only branch that is
+	// shown the difference; everything else takes the default name here and
+	// cannot tell the two apart because it has no reason to.
+	requestedOutput := outputFile
+	if outputFile == "" {
+		outputFile = DefaultOutputFile
+	}
+
 	// If objects are specified via --object flags, create YAML-style plan
 	if len(objects) > 0 {
 		return p.createObjectGroupPlan(objects, outputFile)
@@ -63,7 +76,7 @@ func (p *Planner) CreatePlan(inputs []string, objects []ObjectGroup, outputFile 
 
 	// If single input is a YAML file, use YAML-based plan
 	if len(inputs) == 1 && detectFileType(inputs[0]) == FileTypeYAML {
-		return p.createYAMLPlan(inputs[0])
+		return p.createYAMLPlan(inputs[0], requestedOutput)
 	}
 
 	// Otherwise, detect file types and create appropriate plan
@@ -101,13 +114,24 @@ func (p *Planner) CreatePlan(inputs []string, objects []ObjectGroup, outputFile 
 	}
 }
 
-// createYAMLPlan creates a plan for YAML configuration file
-func (p *Planner) createYAMLPlan(yamlFile string) (*BuildPlan, error) {
-	plan := &BuildPlan{}
+// createYAMLPlan creates a plan for YAML configuration file.
+//
+// requestedOutput is -o as the user typed it, and is empty when they did not
+// pass it. It wins over the config's own `output:` when present, which is the
+// whole reason it is carried this far: every other kind of input takes its
+// output name from the flag already, and a YAML build silently ignoring -o was
+// the odd one out.
+func (p *Planner) createYAMLPlan(yamlFile string, requestedOutput string) (*BuildPlan, error) {
+	// Left empty when there is no -o, so LoadYAMLStep's read of the config
+	// fills it in. Execute() copies it back off the build context.
+	plan := &BuildPlan{
+		OutputFile: requestedOutput,
+	}
 
 	// Step 1: Load YAML configuration
 	plan.Steps = append(plan.Steps, &LoadYAMLStep{
-		ConfigPath: yamlFile,
+		ConfigPath:      yamlFile,
+		RequestedOutput: requestedOutput,
 	})
 
 	// Step 2: Check preconditions (OpenSCAD)
@@ -427,7 +451,9 @@ func pluralize(count int) string {
 // LoadYAMLStep loads and validates YAML configuration
 type LoadYAMLStep struct {
 	ConfigPath string
-	Plan       *BuildPlan
+	// RequestedOutput is -o, empty when it was not given. See createYAMLPlan.
+	RequestedOutput string
+	Plan            *BuildPlan
 }
 
 func (s *LoadYAMLStep) Name() string {
@@ -442,6 +468,11 @@ func (s *LoadYAMLStep) Execute() error {
 	}
 	buildContext.YAMLConfig = cfg
 	buildContext.OutputFile = cfg.Output
+	if s.RequestedOutput != "" {
+		// -o beats the config's own `output:`. Both are used as written,
+		// relative to the working directory rather than to the config.
+		buildContext.OutputFile = s.RequestedOutput
+	}
 	buildContext.ConfigDir = filepath.Dir(s.ConfigPath)
 	ui.PrintSuccess(fmt.Sprintf("Loaded configuration with %d object(s)", len(cfg.Objects)))
 
